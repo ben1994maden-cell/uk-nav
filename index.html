@@ -16,7 +16,7 @@
       background: rgba(20, 22, 28, 0.94); color: #fff; padding: 14px;
       border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,0.45);
     }
-    .row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .row { display: flex; gap: 8px; margin-bottom: 6px; position: relative; }
     input {
       flex: 1; padding: 11px; border-radius: 8px; border: 1px solid #333;
       background: #222630; color: #fff; font-size: 15px;
@@ -25,14 +25,24 @@
       padding: 11px 16px; border-radius: 8px; border: none;
       background: #007aff; color: #fff; font-weight: 600; font-size: 15px;
     }
-    #status { font-size: 13px; color: #a0aec0; line-height: 1.4; }
+    #suggestions {
+      position: absolute; top: 48px; left: 0; right: 64px; background: #222630;
+      border: 1px solid #333; border-radius: 8px; max-height: 180px; overflow-y: auto;
+      z-index: 20; display: none;
+    }
+    .suggestion-item {
+      padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    #status { font-size: 13px; color: #a0aec0; line-height: 1.4; margin-top: 6px;}
     .alert { color: #48bb78 !important; font-weight: 600; }
   </style>
 </head>
 <body>
   <div id="panel">
     <div class="row">
-      <input id="destInput" type="text" placeholder="Enter UK postcode or destination..." />
+      <input id="destInput" type="text" placeholder="Enter UK postcode or destination..." autocomplete="off" />
+      <div id="suggestions"></div>
       <button onclick="startNavigation()">Go</button>
     </div>
     <div id="status">Waiting for GPS signal...</div>
@@ -40,13 +50,13 @@
   <div id="map"></div>
 
   <script>
-    // PASTE YOUR TOMTOM API KEY INSIDE THE QUOTES BELOW
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
 
     let userPos = null;
     let destPos = null;
     let currentTravelTime = null;
     let rerouteTimer = null;
+    let searchTimeout = null;
 
     const map = tt.map({
       key: API_KEY,
@@ -81,23 +91,69 @@
       { enableHighAccuracy: true, maximumAge: 5000 }
     );
 
-    async function startNavigation() {
-      const query = document.getElementById("destInput").value.trim();
-      if (!query || !userPos) return;
+    const destInput = document.getElementById("destInput");
+    const suggestionsBox = document.getElementById("suggestions");
 
-      document.getElementById("status").innerText = "Finding destination...";
-      const geoRes = await tt.services.fuzzySearch({
-        key: API_KEY,
-        query: query,
-        countrySet: "GB"
-      });
-
-      if (!geoRes.results || geoRes.results.length === 0) {
-        document.getElementById("status").innerText = "Destination not found in UK.";
+    destInput.addEventListener("input", (e) => {
+      clearTimeout(searchTimeout);
+      const query = e.target.value.trim();
+      if (query.length < 3) {
+        suggestionsBox.style.display = "none";
         return;
       }
 
-      destPos = [geoRes.results[0].position.lng, geoRes.results[0].position.lat];
+      searchTimeout = setTimeout(async () => {
+        try {
+          const res = await tt.services.fuzzySearch({
+            key: API_KEY,
+            query: query,
+            countrySet: "GB",
+            limit: 5
+          });
+
+          if (res.results && res.results.length > 0) {
+            suggestionsBox.innerHTML = "";
+            res.results.forEach(item => {
+              const div = document.createElement("div");
+              div.className = "suggestion-item";
+              div.innerText = item.poi ? `${item.poi.name}, ${item.address.freeformAddress}` : item.address.freeformAddress;
+              
+              const selectLocation = (evt) => {
+                evt.preventDefault();
+                destPos = [item.position.lng, item.position.lat];
+                destInput.value = div.innerText;
+                suggestionsBox.style.display = "none";
+                startNavigation();
+              };
+
+              div.addEventListener("click", selectLocation);
+              div.addEventListener("touchend", selectLocation);
+              suggestionsBox.appendChild(div);
+            });
+            suggestionsBox.style.display = "block";
+          } else {
+            suggestionsBox.style.display = "none";
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }, 300);
+    });
+
+    async function startNavigation() {
+      suggestionsBox.style.display = "none";
+      if (!destPos) {
+        const query = destInput.value.trim();
+        if (!query || !userPos) return;
+        document.getElementById("status").innerText = "Finding destination...";
+        const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query: query, countrySet: "GB" });
+        if (!geoRes.results || geoRes.results.length === 0) {
+          document.getElementById("status").innerText = "Destination not found in UK.";
+          return;
+        }
+        destPos = [geoRes.results[0].position.lng, geoRes.results[0].position.lat];
+      }
+
       currentTravelTime = null;
       await evaluateFastestRoute(true);
 
