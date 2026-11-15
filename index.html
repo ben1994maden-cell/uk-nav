@@ -71,7 +71,7 @@
       container: "map",
       center: userPos,
       zoom: 17,
-      pitch: 50, // 3D driving angle
+      pitch: 50,
       stylesVisibility: { trafficFlow: true, trafficIncidents: true }
     });
 
@@ -115,10 +115,9 @@
         const newLat = pos.coords.latitude;
         
         if (prevPos) {
-          // Calculate heading automatically based on movement direction
           const bearing = calculateBearing(prevPos[1], prevPos[0], newLat, newLng);
           if (isNavigating && isFollowing && !isNaN(bearing)) {
-            map.setBearing(bearing); // Automatically rotates map in travel direction
+            map.setBearing(bearing);
           }
         }
 
@@ -223,8 +222,7 @@
           key: API_KEY,
           locations: `${userPos[0]},${userPos[1]}:${destPos[0]},${destPos[1]}`,
           traffic: true,
-          routeType: "fastest",
-          instructionsType: "text"
+          routeType: "fastest"
         });
 
         const geojson = routeRes.toGeoJson();
@@ -245,10 +243,9 @@
         const summary = route.summary;
         const mins = Math.round(summary.travelTimeInSeconds / 60);
         const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
-        const nextInstruction = route.guidance?.instructions?.[1]?.message || "Proceed on route";
 
         document.getElementById("status").className = delayMins > 5 ? "alert" : "";
-        document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay) • ${nextInstruction}`;
+        document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay)`;
 
         if (isInitial) {
           speak(`Navigation started. Estimated time ${mins} minutes.`);
