@@ -34,6 +34,7 @@
       padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
     }
     #status { font-size: 13px; color: #a0aec0; line-height: 1.4; margin-top: 6px; }
+    .alert { color: #48bb78 !important; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -49,28 +50,49 @@
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
-    let userPos = [-1.467, 52.523]; // Fallback to Nuneaton center
+    let userPos = [-1.467, 52.523];
     let destPos = null;
-    let routeLayerId = null;
+    let isNavigating = false;
+    let rerouteTimer = null;
 
     const map = tt.map({
       key: API_KEY,
       container: "map",
       center: userPos,
-      zoom: 13,
+      zoom: 16, // Closer driving zoom level like Waze/Apple Maps
+      pitch: 45, // Tilts the map for a 3D driving perspective
       stylesVisibility: { trafficFlow: true, trafficIncidents: true }
     });
 
     const userMarker = new tt.Marker({ color: "#007aff" }).setLngLat(userPos).addTo(map);
 
+    function speak(text) {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = "en-GB";
+        window.speechSynthesis.speak(msg);
+      }
+    }
+
+    // Live GPS tracking loop while driving
     navigator.geolocation.watchPosition(
       (pos) => {
         userPos = [pos.coords.longitude, pos.coords.latitude];
         userMarker.setLngLat(userPos);
-        document.getElementById("status").innerText = "GPS locked. Ready.";
+
+        if (isNavigating) {
+          map.setCenter(userPos); // Auto-pans map to keep you at the center like a live nav app
+          if (pos.coords.heading) {
+            map.setRotation(pos.coords.heading); // Rotates map based on your driving direction
+          }
+        } else {
+          map.setCenter(userPos);
+          document.getElementById("status").innerText = "GPS locked. Ready.";
+        }
       },
-      () => { document.getElementById("status").innerText = "Using default location."; },
-      { enableHighAccuracy: true, maximumAge: 2000 }
+      (err) => { document.getElementById("status").innerText = "GPS signal lost."; },
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
     );
 
     const destInput = document.getElementById("destInput");
@@ -104,7 +126,7 @@
               destPos = [item.position.lng, item.position.lat];
               destInput.value = div.innerText;
               suggestionsBox.style.display = "none";
-              calculateAndDrawRoute();
+              startLiveNavigation();
             };
 
             div.addEventListener("click", chooseDest);
@@ -133,23 +155,32 @@
         }
 
         destPos = [geoRes.results[0].position.lng, geoRes.results[0].position.lat];
-        calculateAndDrawRoute();
+        startLiveNavigation();
       } catch (err) {
         document.getElementById("status").innerText = "Search error.";
       }
     }
 
-    async function calculateAndDrawRoute() {
+    async function startLiveNavigation() {
+      isNavigating = true;
+      await calculateAndDrawRoute(true);
+
+      // Check for traffic updates & auto-reroute every 30 seconds while driving
+      if (rerouteTimer) clearInterval(rerouteTimer);
+      rerouteTimer = setInterval(() => calculateAndDrawRoute(false), 30000);
+    }
+
+    async function calculateAndDrawRoute(isInitial) {
       if (!userPos || !destPos) return;
 
-      document.getElementById("status").innerText = "Calculating route...";
+      document.getElementById("status").innerText = "Calculating route & traffic...";
       try {
-        // TomTom Web Services calculateRoute expects locations as array of objects or coordinate pairs
         const routeRes = await tt.services.calculateRoute({
           key: API_KEY,
           locations: `${userPos[0]},${userPos[1]}:${destPos[0]},${destPos[1]}`,
           traffic: true,
-          routeType: "fastest"
+          routeType: "fastest",
+          instructionsType: "text"
         });
 
         const geojson = routeRes.toGeoJson();
@@ -163,15 +194,30 @@
           id: "route",
           type: "line",
           source: { type: "geojson", data: geojson },
-          paint: { "line-color": "#00d4ff", "line-width": 6 }
+          paint: { "line-color": "#007aff", "line-width": 8 }
         });
 
-        const summary = routeRes.routes[0].summary;
+        const route = routeRes.routes[0];
+        const summary = route.summary;
         const mins = Math.round(summary.travelTimeInSeconds / 60);
-        document.getElementById("status").innerText = `Route loaded successfully! ETA: ${mins} mins.`;
+        const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
+        
+        // Get next navigation instruction if available
+        const nextInstruction = route.guidance?.instructions?.[1]?.message || "Proceed on route";
+
+        document.getElementById("status").className = delayMins > 5 ? "alert" : "";
+        document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay) • ${nextInstruction}`;
+
+        if (isInitial) {
+          speak(`Navigation started. Estimated time ${mins} minutes. ${nextInstruction}`);
+        } else if (delayMins > 5) {
+          speak(`Traffic delay detected. ${nextInstruction}`);
+        }
+
+        map.setCenter(userPos);
       } catch (err) {
         console.error("Routing error:", err);
-        document.getElementById("status").innerText = "Route calculation failed.";
+        document.getElementById("status").innerText = "Navigation update failed.";
       }
     }
   </script>
