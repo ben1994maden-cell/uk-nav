@@ -50,7 +50,7 @@
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
-    let userPos = null;
+    let userPos = [-1.467, 52.523]; // Default fallback location (Nuneaton area)
     let destPos = null;
     let currentTravelTime = null;
     let rerouteTimer = null;
@@ -58,15 +58,16 @@
     const map = tt.map({
       key: API_KEY,
       container: "map",
-      center: [-1.467, 52.523],
-      zoom: 12,
+      center: userPos,
+      zoom: 13,
       stylesVisibility: { trafficFlow: true, trafficIncidents: true }
     });
 
-    const userMarker = new tt.Marker({ color: "#007aff" }).setLngLat([-1.467, 52.523]).addTo(map);
+    const userMarker = new tt.Marker({ color: "#007aff" }).setLngLat(userPos).addTo(map);
 
     function speak(text) {
       if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
         const msg = new SpeechSynthesisUtterance(text);
         msg.lang = "en-GB";
         window.speechSynthesis.speak(msg);
@@ -82,14 +83,15 @@
           document.getElementById("status").innerText = "GPS locked. Ready to route.";
         }
       },
-      () => { document.getElementById("status").innerText = "Enable Location permissions."; },
-      { enableHighAccuracy: true, maximumAge: 5000 }
+      () => { 
+        document.getElementById("status").innerText = "Using default location. GPS disabled."; 
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
     );
 
     const destInput = document.getElementById("destInput");
     const suggestionsBox = document.getElementById("suggestions");
 
-    // Autocomplete search as you type
     destInput.addEventListener("input", async (e) => {
       const query = e.target.value.trim();
       if (query.length < 3) {
@@ -114,6 +116,7 @@
             
             const chooseDest = (evt) => {
               evt.preventDefault();
+              destInput.blur();
               destPos = [item.position.lng, item.position.lat];
               destInput.value = div.innerText;
               suggestionsBox.style.display = "none";
@@ -133,51 +136,67 @@
       }
     });
 
-    // Fallback: If they click "Go" directly without picking from dropdown
     async function startDirectRoute() {
+      destInput.blur();
       suggestionsBox.style.display = "none";
       const query = destInput.value.trim();
-      if (!query || !userPos) return;
+      if (!query) return;
 
       document.getElementById("status").innerText = "Finding destination...";
-      const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query: query, countrySet: "GB" });
-      
-      if (!geoRes.results || geoRes.results.length === 0) {
-        document.getElementById("status").innerText = "Destination not found.";
-        return;
-      }
+      try {
+        const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query: query, countrySet: "GB" });
+        
+        if (!geoRes.results || geoRes.results.length === 0) {
+          document.getElementById("status").innerText = "Destination not found.";
+          return;
+        }
 
-      destPos = [geoRes.results[0].position.lng, geoRes.results[0].position.lat];
-      calculateAndDrawRoute();
+        destPos = [geoRes.results[0].position.lng, geoRes.results[0].position.lat];
+        calculateAndDrawRoute();
+      } catch (err) {
+        document.getElementById("status").innerText = "Search error occurred.";
+        console.error(err);
+      }
     }
 
     async function calculateAndDrawRoute() {
       if (!userPos || !destPos) return;
 
-      const routeRes = await tt.services.calculateRoute({
-        key: API_KEY,
-        locations: [userPos, destPos],
-        traffic: true,
-        routeType: "fastest",
-        maxAlternatives: 2,
-        instructionsType: "text"
-      });
+      document.getElementById("status").innerText = "Calculating route...";
+      try {
+        const routeRes = await tt.services.calculateRoute({
+          key: API_KEY,
+          locations: [userPos, destPos],
+          traffic: true,
+          routeType: "fastest",
+          maxAlternatives: 2,
+          instructionsType: "text"
+        });
 
-      const bestRoute = routeRes.routes[0];
-      const newTimeSec = bestRoute.summary.travelTimeInSeconds;
-      const delaySec = bestRoute.summary.trafficDelayInSeconds;
-      const mins = Math.round(newTimeSec / 60);
-      const nextTurn = bestRoute.guidance.instructions[1]?.message || "Proceed on route";
+        if (!routeRes.routes || routeRes.routes.length === 0) {
+          document.getElementById("status").innerText = "Could not find a driving route.";
+          return;
+        }
 
-      document.getElementById("status").className = "";
-      document.getElementById("status").innerText = `ETA: ${mins} min (${Math.round(delaySec / 60)} min delay) • Next: ${nextTurn}`;
-      speak(`Route started. ${mins} minutes. ${nextTurn}`);
+        const bestRoute = routeRes.routes[0];
+        const newTimeSec = bestRoute.summary.travelTimeInSeconds;
+        const delaySec = bestRoute.summary.trafficDelayInSeconds || 0;
+        const mins = Math.round(newTimeSec / 60);
+        const nextTurn = bestRoute.guidance?.instructions?.[1]?.message || "Proceed on route";
 
-      currentTravelTime = newTimeSec;
-      drawRouteOnMap(bestRoute.toGeoJson());
+        document.getElementById("status").className = "";
+        document.getElementById("status").innerText = `ETA: ${mins} min (${Math.round(delaySec / 60)} min delay) • Next: ${nextTurn}`;
+        speak(`Route started. ${mins} minutes.`);
 
-      if (rerouteTimer) clearInterval(rerouteTimer);
-      rerouteTimer = setInterval(() => calculateAndDrawRoute(), 45000);
+        currentTravelTime = newTimeSec;
+        drawRouteOnMap(bestRoute.toGeoJson());
+
+        if (rerouteTimer) clearInterval(rerouteTimer);
+        rerouteTimer = setInterval(() => calculateAndDrawRoute(), 45000);
+      } catch (err) {
+        document.getElementById("status").innerText = "Route calculation failed.";
+        console.error(err);
+      }
     }
 
     function drawRouteOnMap(geoJson) {
@@ -191,6 +210,13 @@
         source: { type: "geojson", data: geoJson },
         paint: { "line-color": "#00d4ff", "line-width": 6 }
       });
+
+      // Fit map bounds to show the full route
+      const coordinates = geoJson.geometry.coordinates;
+      const bounds = coordinates.reduce((bounds, coord) => {
+        return bounds.extend(coord);
+      }, new tt.LngLatBounds(coordinates[0], coordinates[0]));
+      map.fitBounds(bounds, { padding: 50, maxZoom: 15 });
     }
   </script>
 </body>
