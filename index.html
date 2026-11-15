@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>UK Auto-Divert Nav</title>
+  <link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css" />
+  <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
+  <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/services/services-web.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body, html { height: 100%; width: 100%; overflow: hidden; background: #111; }
+    #map { height: 100%; width: 100%; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 10;
+      background: rgba(20, 22, 28, 0.94); color: #fff; padding: 14px;
+      border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+    }
+    .row { display: flex; gap: 8px; margin-bottom: 8px; }
+    input {
+      flex: 1; padding: 11px; border-radius: 8px; border: 1px solid #333;
+      background: #222630; color: #fff; font-size: 15px;
+    }
+    button {
+      padding: 11px 16px; border-radius: 8px; border: none;
+      background: #007aff; color: #fff; font-weight: 600; font-size: 15px;
+    }
+    #status { font-size: 13px; color: #a0aec0; line-height: 1.4; }
+    .alert { color: #48bb78 !important; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <div class="row">
+      <input id="destInput" type="text" placeholder="Enter UK postcode or destination..." />
+      <button onclick="startNavigation()">Go</button>
+    </div>
+    <div id="status">Waiting for GPS signal...</div>
+  </div>
+  <div id="map"></div>
+
+  <script>
+    // PASTE YOUR TOMTOM API KEY INSIDE THE QUOTES BELOW
+    const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
+
+    let userPos = null;
+    let destPos = null;
+    let currentTravelTime = null;
+    let rerouteTimer = null;
+
+    const map = tt.map({
+      key: API_KEY,
+      container: "map",
+      center: [-1.467, 52.523],
+      zoom: 12,
+      stylesVisibility: { trafficFlow: true, trafficIncidents: true }
+    });
+
+    const userMarker = new tt.Marker({ color: "#007aff" }).setLngLat([-1.467, 52.523]).addTo(map);
+
+    function speak(text) {
+      if ("speechSynthesis" in window) {
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = "en-GB";
+        window.speechSynthesis.speak(msg);
+      }
+    }
+
+    navigator.geolocation.watchPosition(
+      (pos) => {
+        userPos = [pos.coords.longitude, pos.coords.latitude];
+        userMarker.setLngLat(userPos);
+        if (!destPos) {
+          map.setCenter(userPos);
+          document.getElementById("status").innerText = "GPS locked. Ready to route around traffic.";
+        }
+      },
+      (err) => {
+        document.getElementById("status").innerText = "Enable Location permissions in your browser.";
+      },
+      { enableHighAccuracy: true, maximumAge: 5000 }
+    );
+
+    async function startNavigation() {
+      const query = document.getElementById("destInput").value.trim();
+      if (!query || !userPos) return;
+
+      document.getElementById("status").innerText = "Finding destination...";
+      const geoRes = await tt.services.fuzzySearch({
+        key: API_KEY,
+        query: query,
+        countrySet: "GB"
+      });
+
+      if (!geoRes.results || geoRes.results.length === 0) {
+        document.getElementById("status").innerText = "Destination not found in UK.";
+        return;
+      }
+
+      destPos = [geoRes.results[0].position.lng, geoRes.results[0].position.lat];
+      currentTravelTime = null;
+      await evaluateFastestRoute(true);
+
+      if (rerouteTimer) clearInterval(rerouteTimer);
+      rerouteTimer = setInterval(() => evaluateFastestRoute(false), 45000);
+    }
+
+    async function evaluateFastestRoute(isInitial) {
+      if (!userPos || !destPos) return;
+
+      const routeRes = await tt.services.calculateRoute({
+        key: API_KEY,
+        locations: [userPos, destPos],
+        traffic: true,
+        routeType: "fastest",
+        maxAlternatives: 2,
+        instructionsType: "text"
+      });
+
+      const bestRoute = routeRes.routes[0];
+      const newTimeSec = bestRoute.summary.travelTimeInSeconds;
+      const delaySec = bestRoute.summary.trafficDelayInSeconds;
+      const mins = Math.round(newTimeSec / 60);
+      const nextTurn = bestRoute.guidance.instructions[1]?.message || "Proceed on route";
+
+      if (!isInitial && currentTravelTime && (currentTravelTime - newTimeSec) > 120) {
+        const savedMins = Math.round((currentTravelTime - newTimeSec) / 60);
+        const alertText = `Traffic ahead. Auto-diverting to save ${savedMins} minutes. ${nextTurn}`;
+        document.getElementById("status").className = "alert";
+        document.getElementById("status").innerText = alertText;
+        speak(alertText);
+      } else {
+        document.getElementById("status").className = "";
+        document.getElementById("status").innerText =
+          `ETA: ${mins} min (${Math.round(delaySec / 60)} min traffic delay) • Next: ${nextTurn}`;
+        if (isInitial) speak(`Route started. ${mins} minutes. ${nextTurn}`);
+      }
+
+      currentTravelTime = newTimeSec;
+      drawRouteOnMap(bestRoute.toGeoJson());
+    }
+
+    function drawRouteOnMap(geoJson) {
+      if (map.getLayer("route")) {
+        map.removeLayer("route");
+        map.removeSource("route");
+      }
+      map.addLayer({
+        id: "route",
+        type: "line",
+        source: { type: "geojson", data: geoJson },
+        paint: { "line-color": "#00d4ff", "line-width": 6 }
+      });
+    }
+  </script>
+</body>
+</html>
