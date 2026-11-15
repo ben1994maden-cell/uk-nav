@@ -33,17 +33,16 @@
     .suggestion-item {
       padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
     }
-    .suggestion-item:last-child { border-bottom: none; }
-    #status { font-size: 13px; color: #a0aec0; line-height: 1.4; margin-top: 6px;}
+    #status { font-size: 13px; color: #a0aec0; line-height: 1.4; margin-top: 6px; }
     .alert { color: #48bb78 !important; font-weight: 600; }
   </style>
 </head>
 <body>
   <div id="panel">
     <div class="row">
-      <input id="destInput" type="text" placeholder="Enter UK postcode or destination..." autocomplete="off" />
+      <input id="destInput" type="text" placeholder="Enter destination or postcode..." autocomplete="off" />
       <div id="suggestions"></div>
-      <button onclick="startNavigation()">Go</button>
+      <button onclick="startDirectRoute()">Go</button>
     </div>
     <div id="status">Waiting for GPS signal...</div>
   </div>
@@ -51,12 +50,10 @@
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
-
     let userPos = null;
     let destPos = null;
     let currentTravelTime = null;
     let rerouteTimer = null;
-    let searchTimeout = null;
 
     const map = tt.map({
       key: API_KEY,
@@ -82,86 +79,79 @@
         userMarker.setLngLat(userPos);
         if (!destPos) {
           map.setCenter(userPos);
-          document.getElementById("status").innerText = "GPS locked. Ready to route around traffic.";
+          document.getElementById("status").innerText = "GPS locked. Ready to route.";
         }
       },
-      (err) => {
-        document.getElementById("status").innerText = "Enable Location permissions in your browser.";
-      },
+      () => { document.getElementById("status").innerText = "Enable Location permissions."; },
       { enableHighAccuracy: true, maximumAge: 5000 }
     );
 
     const destInput = document.getElementById("destInput");
     const suggestionsBox = document.getElementById("suggestions");
 
-    destInput.addEventListener("input", (e) => {
-      clearTimeout(searchTimeout);
+    // Autocomplete search as you type
+    destInput.addEventListener("input", async (e) => {
       const query = e.target.value.trim();
       if (query.length < 3) {
         suggestionsBox.style.display = "none";
         return;
       }
 
-      searchTimeout = setTimeout(async () => {
-        try {
-          const res = await tt.services.fuzzySearch({
-            key: API_KEY,
-            query: query,
-            countrySet: "GB",
-            limit: 5
+      try {
+        const res = await tt.services.fuzzySearch({
+          key: API_KEY,
+          query: query,
+          countrySet: "GB",
+          limit: 5
+        });
+
+        if (res.results && res.results.length > 0) {
+          suggestionsBox.innerHTML = "";
+          res.results.forEach(item => {
+            const div = document.createElement("div");
+            div.className = "suggestion-item";
+            div.innerText = item.poi ? `${item.poi.name}, ${item.address.freeformAddress}` : item.address.freeformAddress;
+            
+            const chooseDest = (evt) => {
+              evt.preventDefault();
+              destPos = [item.position.lng, item.position.lat];
+              destInput.value = div.innerText;
+              suggestionsBox.style.display = "none";
+              calculateAndDrawRoute();
+            };
+
+            div.addEventListener("click", chooseDest);
+            div.addEventListener("touchend", chooseDest);
+            suggestionsBox.appendChild(div);
           });
-
-          if (res.results && res.results.length > 0) {
-            suggestionsBox.innerHTML = "";
-            res.results.forEach(item => {
-              const div = document.createElement("div");
-              div.className = "suggestion-item";
-              div.innerText = item.poi ? `${item.poi.name}, ${item.address.freeformAddress}` : item.address.freeformAddress;
-              
-              const selectLocation = (evt) => {
-                evt.preventDefault();
-                destPos = [item.position.lng, item.position.lat];
-                destInput.value = div.innerText;
-                suggestionsBox.style.display = "none";
-                startNavigation();
-              };
-
-              div.addEventListener("click", selectLocation);
-              div.addEventListener("touchend", selectLocation);
-              suggestionsBox.appendChild(div);
-            });
-            suggestionsBox.style.display = "block";
-          } else {
-            suggestionsBox.style.display = "none";
-          }
-        } catch (err) {
-          console.error(err);
+          suggestionsBox.style.display = "block";
+        } else {
+          suggestionsBox.style.display = "none";
         }
-      }, 300);
+      } catch (err) {
+        console.error(err);
+      }
     });
 
-    async function startNavigation() {
+    // Fallback: If they click "Go" directly without picking from dropdown
+    async function startDirectRoute() {
       suggestionsBox.style.display = "none";
-      if (!destPos) {
-        const query = destInput.value.trim();
-        if (!query || !userPos) return;
-        document.getElementById("status").innerText = "Finding destination...";
-        const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query: query, countrySet: "GB" });
-        if (!geoRes.results || geoRes.results.length === 0) {
-          document.getElementById("status").innerText = "Destination not found in UK.";
-          return;
-        }
-        destPos = [geoRes.results[0].position.lng, geoRes.results[0].position.lat];
+      const query = destInput.value.trim();
+      if (!query || !userPos) return;
+
+      document.getElementById("status").innerText = "Finding destination...";
+      const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query: query, countrySet: "GB" });
+      
+      if (!geoRes.results || geoRes.results.length === 0) {
+        document.getElementById("status").innerText = "Destination not found.";
+        return;
       }
 
-      currentTravelTime = null;
-      await evaluateFastestRoute(true);
-
-      if (rerouteTimer) clearInterval(rerouteTimer);
-      rerouteTimer = setInterval(() => evaluateFastestRoute(false), 45000);
+      destPos = [geoRes.results[0].position.lng, geoRes.results[0].position.lat];
+      calculateAndDrawRoute();
     }
 
-    async function evaluateFastestRoute(isInitial) {
+    async function calculateAndDrawRoute() {
       if (!userPos || !destPos) return;
 
       const routeRes = await tt.services.calculateRoute({
@@ -179,21 +169,15 @@
       const mins = Math.round(newTimeSec / 60);
       const nextTurn = bestRoute.guidance.instructions[1]?.message || "Proceed on route";
 
-      if (!isInitial && currentTravelTime && (currentTravelTime - newTimeSec) > 120) {
-        const savedMins = Math.round((currentTravelTime - newTimeSec) / 60);
-        const alertText = `Traffic ahead. Auto-diverting to save ${savedMins} minutes. ${nextTurn}`;
-        document.getElementById("status").className = "alert";
-        document.getElementById("status").innerText = alertText;
-        speak(alertText);
-      } else {
-        document.getElementById("status").className = "";
-        document.getElementById("status").innerText =
-          `ETA: ${mins} min (${Math.round(delaySec / 60)} min traffic delay) • Next: ${nextTurn}`;
-        if (isInitial) speak(`Route started. ${mins} minutes. ${nextTurn}`);
-      }
+      document.getElementById("status").className = "";
+      document.getElementById("status").innerText = `ETA: ${mins} min (${Math.round(delaySec / 60)} min delay) • Next: ${nextTurn}`;
+      speak(`Route started. ${mins} minutes. ${nextTurn}`);
 
       currentTravelTime = newTimeSec;
       drawRouteOnMap(bestRoute.toGeoJson());
+
+      if (rerouteTimer) clearInterval(rerouteTimer);
+      rerouteTimer = setInterval(() => calculateAndDrawRoute(), 45000);
     }
 
     function drawRouteOnMap(geoJson) {
