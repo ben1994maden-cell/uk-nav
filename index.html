@@ -35,6 +35,14 @@
     }
     #status { font-size: 13px; color: #a0aec0; line-height: 1.4; margin-top: 6px; }
     .alert { color: #48bb78 !important; font-weight: 600; }
+    
+    /* Recenter button floating on bottom right */
+    #recenterBtn {
+      position: absolute; bottom: 30px; right: 20px; z-index: 10;
+      background: #007aff; color: #fff; border: none; border-radius: 50px;
+      padding: 12px 18px; font-weight: 600; font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: none;
+    }
   </style>
 </head>
 <body>
@@ -46,25 +54,42 @@
     </div>
     <div id="status">Waiting for GPS signal...</div>
   </div>
+  
   <div id="map"></div>
+  <button id="recenterBtn" onclick="recenterMap()">Recenter</button>
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
     let userPos = [-1.467, 52.523];
     let destPos = null;
     let isNavigating = false;
+    let isFollowing = true; // Controls whether map auto-pans to user
     let rerouteTimer = null;
 
     const map = tt.map({
       key: API_KEY,
       container: "map",
       center: userPos,
-      zoom: 16, // Closer driving zoom level like Waze/Apple Maps
-      pitch: 45, // Tilts the map for a 3D driving perspective
+      zoom: 15,
+      pitch: 30,
       stylesVisibility: { trafficFlow: true, trafficIncidents: true }
     });
 
     const userMarker = new tt.Marker({ color: "#007aff" }).setLngLat(userPos).addTo(map);
+
+    // If user touches/drags the map to check route, stop auto-following
+    map.on('dragstart', () => {
+      if (isNavigating) {
+        isFollowing = false;
+        document.getElementById("recenterBtn").style.display = "block";
+      }
+    });
+
+    function recenterMap() {
+      isFollowing = true;
+      document.getElementById("recenterBtn").style.display = "none";
+      map.setCenter(userPos);
+    }
 
     function speak(text) {
       if ("speechSynthesis" in window) {
@@ -75,16 +100,17 @@
       }
     }
 
-    // Live GPS tracking loop while driving
     navigator.geolocation.watchPosition(
       (pos) => {
         userPos = [pos.coords.longitude, pos.coords.latitude];
         userMarker.setLngLat(userPos);
 
         if (isNavigating) {
-          map.setCenter(userPos); // Auto-pans map to keep you at the center like a live nav app
-          if (pos.coords.heading) {
-            map.setRotation(pos.coords.heading); // Rotates map based on your driving direction
+          if (isFollowing) {
+            map.setCenter(userPos);[span_1](start_span)[span_1](end_span)
+            if (pos.coords.heading) {
+              map.setRotation(pos.coords.heading);
+            }
           }
         } else {
           map.setCenter(userPos);
@@ -163,9 +189,9 @@
 
     async function startLiveNavigation() {
       isNavigating = true;
+      isFollowing = true;
       await calculateAndDrawRoute(true);
 
-      // Check for traffic updates & auto-reroute every 30 seconds while driving
       if (rerouteTimer) clearInterval(rerouteTimer);
       rerouteTimer = setInterval(() => calculateAndDrawRoute(false), 30000);
     }
@@ -201,20 +227,18 @@
         const summary = route.summary;
         const mins = Math.round(summary.travelTimeInSeconds / 60);
         const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
-        
-        // Get next navigation instruction if available
         const nextInstruction = route.guidance?.instructions?.[1]?.message || "Proceed on route";
 
         document.getElementById("status").className = delayMins > 5 ? "alert" : "";
         document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay) • ${nextInstruction}`;
 
         if (isInitial) {
-          speak(`Navigation started. Estimated time ${mins} minutes. ${nextInstruction}`);
-        } else if (delayMins > 5) {
-          speak(`Traffic delay detected. ${nextInstruction}`);
+          speak(`Navigation started. Estimated time ${mins} minutes.`);
         }
 
-        map.setCenter(userPos);
+        if (isFollowing) {
+          map.setCenter(userPos);[span_2](start_span)[span_2](end_span)
+        }
       } catch (err) {
         console.error("Routing error:", err);
         document.getElementById("status").innerText = "Navigation update failed.";
