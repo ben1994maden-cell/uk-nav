@@ -34,7 +34,6 @@
       padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
     }
     #status { font-size: 13px; color: #a0aec0; line-height: 1.4; margin-top: 6px; }
-    .alert { color: #48bb78 !important; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -50,10 +49,9 @@
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
-    let userPos = [-1.467, 52.523]; // Default fallback location (Nuneaton area)
+    let userPos = [-1.467, 52.523]; // Fallback to Nuneaton center
     let destPos = null;
-    let currentTravelTime = null;
-    let rerouteTimer = null;
+    let routeLayerId = null;
 
     const map = tt.map({
       key: API_KEY,
@@ -65,28 +63,14 @@
 
     const userMarker = new tt.Marker({ color: "#007aff" }).setLngLat(userPos).addTo(map);
 
-    function speak(text) {
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const msg = new SpeechSynthesisUtterance(text);
-        msg.lang = "en-GB";
-        window.speechSynthesis.speak(msg);
-      }
-    }
-
     navigator.geolocation.watchPosition(
       (pos) => {
         userPos = [pos.coords.longitude, pos.coords.latitude];
         userMarker.setLngLat(userPos);
-        if (!destPos) {
-          map.setCenter(userPos);
-          document.getElementById("status").innerText = "GPS locked. Ready to route.";
-        }
+        document.getElementById("status").innerText = "GPS locked. Ready.";
       },
-      () => { 
-        document.getElementById("status").innerText = "Using default location. GPS disabled."; 
-      },
-      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+      () => { document.getElementById("status").innerText = "Using default location."; },
+      { enableHighAccuracy: true, maximumAge: 2000 }
     );
 
     const destInput = document.getElementById("destInput");
@@ -128,8 +112,6 @@
             suggestionsBox.appendChild(div);
           });
           suggestionsBox.style.display = "block";
-        } else {
-          suggestionsBox.style.display = "none";
         }
       } catch (err) {
         console.error(err);
@@ -145,7 +127,6 @@
       document.getElementById("status").innerText = "Finding destination...";
       try {
         const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query: query, countrySet: "GB" });
-        
         if (!geoRes.results || geoRes.results.length === 0) {
           document.getElementById("status").innerText = "Destination not found.";
           return;
@@ -154,8 +135,7 @@
         destPos = [geoRes.results[0].position.lng, geoRes.results[0].position.lat];
         calculateAndDrawRoute();
       } catch (err) {
-        document.getElementById("status").innerText = "Search error occurred.";
-        console.error(err);
+        document.getElementById("status").innerText = "Search error.";
       }
     }
 
@@ -164,59 +144,35 @@
 
       document.getElementById("status").innerText = "Calculating route...";
       try {
+        // TomTom Web Services calculateRoute expects locations as array of objects or coordinate pairs
         const routeRes = await tt.services.calculateRoute({
           key: API_KEY,
-          locations: [userPos, destPos],
+          locations: `${userPos[0]},${userPos[1]}:${destPos[0]},${destPos[1]}`,
           traffic: true,
-          routeType: "fastest",
-          maxAlternatives: 2,
-          instructionsType: "text"
+          routeType: "fastest"
         });
 
-        if (!routeRes.routes || routeRes.routes.length === 0) {
-          document.getElementById("status").innerText = "Could not find a driving route.";
-          return;
+        const geojson = routeRes.toGeoJson();
+        
+        if (map.getLayer("route")) {
+          map.removeLayer("route");
+          map.removeSource("route");
         }
 
-        const bestRoute = routeRes.routes[0];
-        const newTimeSec = bestRoute.summary.travelTimeInSeconds;
-        const delaySec = bestRoute.summary.trafficDelayInSeconds || 0;
-        const mins = Math.round(newTimeSec / 60);
-        const nextTurn = bestRoute.guidance?.instructions?.[1]?.message || "Proceed on route";
+        map.addLayer({
+          id: "route",
+          type: "line",
+          source: { type: "geojson", data: geojson },
+          paint: { "line-color": "#00d4ff", "line-width": 6 }
+        });
 
-        document.getElementById("status").className = "";
-        document.getElementById("status").innerText = `ETA: ${mins} min (${Math.round(delaySec / 60)} min delay) • Next: ${nextTurn}`;
-        speak(`Route started. ${mins} minutes.`);
-
-        currentTravelTime = newTimeSec;
-        drawRouteOnMap(bestRoute.toGeoJson());
-
-        if (rerouteTimer) clearInterval(rerouteTimer);
-        rerouteTimer = setInterval(() => calculateAndDrawRoute(), 45000);
+        const summary = routeRes.routes[0].summary;
+        const mins = Math.round(summary.travelTimeInSeconds / 60);
+        document.getElementById("status").innerText = `Route loaded successfully! ETA: ${mins} mins.`;
       } catch (err) {
+        console.error("Routing error:", err);
         document.getElementById("status").innerText = "Route calculation failed.";
-        console.error(err);
       }
-    }
-
-    function drawRouteOnMap(geoJson) {
-      if (map.getLayer("route")) {
-        map.removeLayer("route");
-        map.removeSource("route");
-      }
-      map.addLayer({
-        id: "route",
-        type: "line",
-        source: { type: "geojson", data: geoJson },
-        paint: { "line-color": "#00d4ff", "line-width": 6 }
-      });
-
-      // Fit map bounds to show the full route
-      const coordinates = geoJson.geometry.coordinates;
-      const bounds = coordinates.reduce((bounds, coord) => {
-        return bounds.extend(coord);
-      }, new tt.LngLatBounds(coordinates[0], coordinates[0]));
-      map.fitBounds(bounds, { padding: 50, maxZoom: 15 });
     }
   </script>
 </body>
