@@ -226,6 +226,11 @@
       isFollowing = true;
       document.getElementById("stopNavBtn").style.display = "inline-block";
 
+      // Unlock browser speech on user tap
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+      }
+
       await calculateAndDrawRoute(true);
       if (rerouteTimer) clearInterval(rerouteTimer);
       rerouteTimer = setInterval(() => calculateAndDrawRoute(false), 30000);
@@ -271,7 +276,6 @@
         const mins = Math.round(summary.travelTimeInSeconds / 60);
         const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
 
-        // Voice instruction trigger
         const instructions = route.guidance?.instructions || [];
         const nextStep = instructions[1] || instructions[0];
         if (nextStep && nextStep.message) {
