@@ -1,3 +1,6 @@
+The top half of your screen is showing black text because the explanatory text from the chat was accidentally pasted into your index.html file alongside the code, causing the browser to render the paragraphs directly onto your webpage.
+To fix this, open your index.html file and ensure it contains only the HTML code below—make sure none of the written explanations or markdown text are included.
+Clean HTML Code
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -44,7 +47,6 @@
     }
     .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.25); }
 
-    /* Turn-by-Turn Guidance & Lane Guidance */
     #guidanceBox {
       display: none; background: rgba(0, 122, 255, 0.15); border: 1px solid #007aff;
       border-radius: 10px; padding: 10px; margin-bottom: 8px;
@@ -90,7 +92,6 @@
       <button id="stopNavBtn" class="btn-danger" style="display:none;" onclick="stopNavigation()">End</button>
     </div>
 
-    <!-- Turn guidance & lane guidance panel -->
     <div id="guidanceBox">
       <div id="instructionText">Calculating route...</div>
       <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -306,7 +307,6 @@
     const destInput = document.getElementById("destInput");
     const suggestionsBox = document.getElementById("suggestions");
 
-    // Autocomplete using Photon Geocoder (Fast, Free, CORS-friendly)
     destInput.addEventListener("input", async (e) => {
       const query = e.target.value.trim();
       if (query.length < 3) {
@@ -323,7 +323,7 @@
             const props = item.properties;
             const nameParts = [props.name, props.street, props.city, props.postcode, props.country].filter(Boolean);
             const label = [...new Set(nameParts)].join(", ");
-            const coords = item.geometry.coordinates; // [lon, lat]
+            const coords = item.geometry.coordinates;
 
             const div = document.createElement("div");
             div.className = "suggestion-item";
@@ -510,3 +510,5 @@
   </script>
 </body>
 </html>
+
+Verification: Save the file and refresh your browser or GitHub Pages link. The page should now display only the top search box and the clean map underneath, with zero text paragraphs floating on screen.
