@@ -116,7 +116,7 @@
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
-    let userPos = [-1.467, 52.523];
+    let userPos = [-1.467, 52.523]; // [lng, lat]
     let prevPos = null;
     let waypoints = [];
     let availableRoutes = [];
@@ -209,7 +209,6 @@
     const destInput = document.getElementById("destInput");
     const suggestionsBox = document.getElementById("suggestions");
 
-    // Simple search using TomTom Fuzzy Search REST endpoint
     destInput.addEventListener("input", async (e) => {
       const query = e.target.value.trim();
       if (query.length < 3) {
@@ -231,15 +230,16 @@
               evt.preventDefault();
               destInput.blur();
               suggestionsBox.style.display = "none";
+              const coords = [item.position.lon, item.position.lat];
               if (isAddingStop) {
-                waypoints.unshift({ name: label.split(",")[0], coords: [item.position.lon, item.position.lat] });
+                waypoints.unshift({ name: label.split(",")[0], coords: coords });
                 isAddingStop = false;
                 destInput.placeholder = "Enter destination or postcode...";
                 destInput.value = "";
                 renderWaypoints();
                 if (isNavigating) calculateAndDrawRoutes(false);
               } else {
-                waypoints = [{ name: label, coords: [item.position.lon, item.position.lat] }];
+                waypoints = [{ name: label, coords: coords }];
                 destInput.value = label;
                 renderWaypoints();
                 startLiveNavigation();
@@ -297,13 +297,14 @@
         }
         const top = data.results[0];
         const label = top.poi ? top.poi.name : top.address.freeformAddress;
+        const coords = [top.position.lon, top.position.lat];
         if (isAddingStop) {
-          waypoints.unshift({ name: label, coords: [top.position.lon, top.position.lat] });
+          waypoints.unshift({ name: label, coords: coords });
           isAddingStop = false;
           destInput.value = "";
           renderWaypoints();
         } else {
-          waypoints = [{ name: label, coords: [top.position.lon, top.position.lat] }];
+          waypoints = [{ name: label, coords: coords }];
           renderWaypoints();
         }
         startLiveNavigation();
@@ -343,8 +344,9 @@
 
       document.getElementById("status").innerText = "Calculating route...";
 
-      const coordsChain = [userPos, ...waypoints.map(w => w.coords)]
-        .map(c => `${c[1]},${c[0]}`).join(":");
+      // TomTom routing requires latitude,longitude format: lat1,lon1:lat2,lon2
+      const pointsList = [userPos, ...waypoints.map(w => w.coords)];
+      const coordsChain = pointsList.map(c => `${c[1]},${c[0]}`).join(":");
 
       try {
         const response = await fetch(`https://api.tomtom.com/routing/1/calculateRoute/${coordsChain}/json?key=${API_KEY}&traffic=true&routeType=fastest&maxAlternatives=2`);
