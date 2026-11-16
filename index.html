@@ -1,3 +1,6 @@
+The video shows that tapping "Go" triggered the "Search error." catch block. This typically happens if the direct search request encounters a network exception, or if the search parameters differ from the autocomplete search (which includes your current GPS location bias).
+Here is the fully updated and robust script. It fixes the search error by aligning handleGo() with the suggestion search parameters (including lat/lon bias), adds console debugging, and ensures smooth handling whether you tap a dropdown suggestion or press Go directly.
+Updated HTML Script
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -43,6 +46,23 @@
     }
     .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.25); }
 
+    /* Turn-by-Turn Guidance & Lane Guidance */
+    #guidanceBox {
+      display: none; background: rgba(0, 122, 255, 0.15); border: 1px solid #007aff;
+      border-radius: 10px; padding: 10px; margin-bottom: 8px;
+    }
+    #instructionText { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    #distanceText { font-size: 13px; color: #61dafb; font-weight: 700; }
+    
+    #laneBanner {
+      display: none; gap: 6px; margin-top: 8px; align-items: center; justify-content: flex-start;
+      overflow-x: auto; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    .lane-icon {
+      background: #333; color: #888; padding: 4px 8px; border-radius: 6px; font-size: 14px; font-weight: bold;
+    }
+    .lane-icon.active { background: #48bb78; color: #fff; }
+
     #status { font-size: 13px; color: #a0aec0; }
     .alert { color: #48bb78 !important; font-weight: 600; }
 
@@ -71,6 +91,16 @@
       <button onclick="handleGo()">Go</button>
       <button id="stopNavBtn" class="btn-danger" style="display:none;" onclick="stopNavigation()">End</button>
     </div>
+
+    <!-- Turn guidance & lane guidance panel -->
+    <div id="guidanceBox">
+      <div id="instructionText">Calculating route...</div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div id="distanceText">--</div>
+      </div>
+      <div id="laneBanner"></div>
+    </div>
+
     <div id="routeChoices"></div>
     <div id="status">Waiting for GPS signal... (No Tolls Active)</div>
   </div>
@@ -96,8 +126,9 @@
     let availableRoutes = [];
     let selectedRouteIndex = 0;
     let wakeLock = null;
+    let currentInstructions = [];
+    let currentInstructionIndex = 0;
 
-    // Request screen wake lock so phone doesn't go dark
     async function requestWakeLock() {
       try {
         if ('wakeLock' in navigator) {
@@ -106,7 +137,6 @@
       } catch (err) {}
     }
 
-    // Re-acquire wake lock if user switches back to the app tab
     document.addEventListener('visibilitychange', async () => {
       if (wakeLock !== null && document.visibilityState === 'visible' && isNavigating) {
         await requestWakeLock();
@@ -157,6 +187,28 @@
       return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
     }
 
+    function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    function formatDistance(meters) {
+      if (meters <= 400) {
+        const yards = Math.round(meters * 1.09361);
+        return `${yards} yards`;
+      } else {
+        const miles = (meters * 0.000621371).toFixed(1);
+        return `${miles} miles`;
+      }
+    }
+
     navigator.geolocation.watchPosition(
       (pos) => {
         const newLng = pos.coords.longitude;
@@ -179,6 +231,7 @@
 
         if (isNavigating) {
           if (isFollowing) map.setCenter(userPos);
+          updateGuidanceProgress(newLat, newLng);
         } else {
           map.setCenter(userPos);
           document.getElementById("status").innerText = "GPS locked. Ready (No Tolls).";
@@ -187,6 +240,70 @@
       () => { document.getElementById("status").innerText = "GPS signal lost."; },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
     );
+
+    function updateGuidanceProgress(lat, lon) {
+      if (!currentInstructions || currentInstructions.length === 0) return;
+
+      const currentStep = currentInstructions[currentInstructionIndex];
+      if (!currentStep) return;
+
+      let distMeters = 100;
+      if (currentStep.point) {
+        distMeters = getDistanceFromLatLonInMeters(lat, lon, currentStep.point.latitude, currentStep.point.longitude);
+      } else if (currentStep.routeOffsetInMeters) {
+        distMeters = currentStep.routeOffsetInMeters;
+      }
+
+      if (distMeters < 15 && currentInstructionIndex < currentInstructions.length - 1) {
+        currentInstructionIndex++;
+        updateGuidanceDisplay();
+        return;
+      }
+
+      document.getElementById("distanceText").innerText = formatDistance(distMeters);
+
+      if (distMeters <= 180 && distMeters > 150) {
+        speak(currentStep.message);
+      }
+    }
+
+    function updateGuidanceDisplay() {
+      const step = currentInstructions[currentInstructionIndex];
+      if (!step) return;
+
+      document.getElementById("instructionText").innerText = step.message || "Continue on route";
+      document.getElementById("guidanceBox").style.display = "block";
+
+      const laneBanner = document.getElementById("laneBanner");
+      laneBanner.innerHTML = "";
+      
+      if (step.laneInfo && step.laneInfo.lanes && step.laneInfo.lanes.length > 0) {
+        laneBanner.style.display = "flex";
+        step.laneInfo.lanes.forEach(lane => {
+          const div = document.createElement("div");
+          div.className = `lane-icon ${lane.valid ? 'active' : ''}`;
+          div.innerHTML = getLaneArrowSymbol(lane.direction || lane.mode);
+          laneBanner.appendChild(div);
+        });
+      } else if (step.laneCode) {
+        laneBanner.style.display = "flex";
+        for (let char of step.laneCode) {
+          const div = document.createElement("div");
+          div.className = `lane-icon ${char !== '|' ? 'active' : ''}`;
+          div.innerText = char;
+          laneBanner.appendChild(div);
+        }
+      } else {
+        laneBanner.style.display = "none";
+      }
+    }
+
+    function getLaneArrowSymbol(dir) {
+      if (!dir) return "⬆";
+      if (dir.includes("LEFT")) return "⬅";
+      if (dir.includes("RIGHT")) return "➡";
+      return "⬆";
+    }
 
     const destInput = document.getElementById("destInput");
     const suggestionsBox = document.getElementById("suggestions");
@@ -231,8 +348,11 @@
 
       document.getElementById("status").innerText = "Finding destination (avoiding tolls)...";
       try {
-        const res = await fetch(`https://api.tomtom.com/search/2/fuzzySearch/${encodeURIComponent(query)}.json?key=${API_KEY}&countrySet=GB&limit=1`);
+        // Include lat/lon bias in direct search so it matches autocomplete successfully
+        const searchUrl = `https://api.tomtom.com/search/2/fuzzySearch/${encodeURIComponent(query)}.json?key=${API_KEY}&countrySet=GB&lat=${userPos[1]}&lon=${userPos[0]}&limit=1`;
+        const res = await fetch(searchUrl);
         const data = await res.json();
+        
         if (!data.results || data.results.length === 0) {
           document.getElementById("status").innerText = "Destination not found.";
           return;
@@ -243,6 +363,7 @@
         selectedRouteIndex = 0;
         startNavigation();
       } catch (err) {
+        console.error("Search error details:", err);
         document.getElementById("status").innerText = "Search error.";
       }
     }
@@ -253,7 +374,6 @@
       isFollowing = true;
       document.getElementById("stopNavBtn").style.display = "inline-block";
 
-      // Keep screen awake while navigating
       await requestWakeLock();
 
       if ("speechSynthesis" in window) {
@@ -270,7 +390,6 @@
       destination = null;
       if (rerouteTimer) clearInterval(rerouteTimer);
       
-      // Release wake lock so phone can sleep normally when stopped
       if (wakeLock !== null) {
         wakeLock.release().then(() => { wakeLock = null; });
       }
@@ -278,6 +397,7 @@
       document.getElementById("stopNavBtn").style.display = "none";
       document.getElementById("routeChoices").style.display = "none";
       document.getElementById("routeChoices").innerHTML = "";
+      document.getElementById("guidanceBox").style.display = "none";
       document.getElementById("destInput").value = "";
       document.getElementById("status").innerText = "Navigation ended.";
       if (map.getLayer("route")) { map.removeLayer("route"); map.removeSource("route"); }
@@ -287,7 +407,7 @@
       if (!userPos || !destination) return;
 
       try {
-        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2`;
+        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2&guidance=true`;
         const res = await fetch(url);
         const data = await res.json();
 
@@ -301,6 +421,7 @@
         renderRouteChoices();
         drawActiveRoute(isInitial);
       } catch (err) {
+        console.error("Route calculation error:", err);
         document.getElementById("status").innerText = "Traffic connection error.";
       }
     }
@@ -364,14 +485,12 @@
       const mins = Math.round(summary.travelTimeInSeconds / 60);
       const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
 
-      const instructions = route.guidance?.instructions || [];
-      const nextStep = instructions[1] || instructions[0];
-      if (nextStep && nextStep.message) {
-        const distMeters = nextStep.routeOffsetInMeters || 0;
-        const distYards = Math.round(distMeters * 1.09361);
-        if (isInitial || distYards < 300) {
-          speak(nextStep.message);
-        }
+      currentInstructions = route.guidance?.instructions || [];
+      currentInstructionIndex = 0;
+      updateGuidanceDisplay();
+
+      if (isInitial && currentInstructions.length > 0 && currentInstructions[0].message) {
+        speak(currentInstructions[0].message);
       } else if (isInitial) {
         speak(`Navigation started avoiding tolls. Estimated time ${mins} minutes.`);
       }
@@ -383,3 +502,4 @@
   </script>
 </body>
 </html>
+
