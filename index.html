@@ -3,10 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>UK Auto-Divert Nav</title>
+  <title>UK Auto-Divert Nav - No Tolls</title>
   <link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css" />
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
-  <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/services/services-web.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
     body, html { height: 100%; width: 100%; overflow: hidden; background: #111; }
@@ -40,7 +39,7 @@
     /* Alternative Route Cards Bar */
     #routeChoices { display: none; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
     .route-card {
-      flex: 1; min-width: 95px; background: #222630; border: 2px solid #444;
+      flex: 1; min-width: 100px; background: #222630; border: 2px solid #444;
       padding: 8px; border-radius: 8px; font-size: 12px; text-align: center; cursor: pointer; color: #fff;
     }
     .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.25); }
@@ -74,7 +73,7 @@
       <button id="stopNavBtn" class="btn-danger" style="display:none;" onclick="stopNavigation()">End</button>
     </div>
     <div id="routeChoices"></div>
-    <div id="status">Waiting for GPS signal...</div>
+    <div id="status">Waiting for GPS signal... (No Tolls Active)</div>
   </div>
 
   <div id="map"></div>
@@ -95,7 +94,7 @@
     let isFollowing = true;
     let rerouteTimer = null;
     let lastSpokenInstruction = "";
-    let lastRouteResponse = null;
+    let availableRoutes = [];
     let selectedRouteIndex = 0;
 
     const map = tt.map({
@@ -166,7 +165,7 @@
           if (isFollowing) map.setCenter(userPos);
         } else {
           map.setCenter(userPos);
-          document.getElementById("status").innerText = "GPS locked. Ready.";
+          document.getElementById("status").innerText = "GPS locked. Ready (No Tolls).";
         }
       },
       () => { document.getElementById("status").innerText = "GPS signal lost."; },
@@ -183,12 +182,11 @@
         return;
       }
       try {
-        const res = await tt.services.fuzzySearch({
-          key: API_KEY, query, countrySet: "GB", lat: userPos[1], lon: userPos[0], limit: 5
-        });
-        if (res.results && res.results.length > 0) {
+        const res = await fetch(`https://api.tomtom.com/search/2/fuzzySearch/${encodeURIComponent(query)}.json?key=${API_KEY}&countrySet=GB&lat=${userPos[1]}&lon=${userPos[0]}&limit=5`);
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
           suggestionsBox.innerHTML = "";
-          res.results.forEach(item => {
+          data.results.forEach(item => {
             const div = document.createElement("div");
             div.className = "suggestion-item";
             const label = item.poi ? `${item.poi.name}, ${item.address.freeformAddress}` : item.address.freeformAddress;
@@ -197,7 +195,7 @@
               evt.preventDefault();
               destInput.blur();
               suggestionsBox.style.display = "none";
-              destination = { name: label, coords: [item.position.lng, item.position.lat] };
+              destination = { name: label, coords: [item.position.lon, item.position.lat] };
               destInput.value = label;
               selectedRouteIndex = 0;
               startNavigation();
@@ -215,16 +213,17 @@
       const query = destInput.value.trim();
       if (!query) return;
 
-      document.getElementById("status").innerText = "Finding destination...";
+      document.getElementById("status").innerText = "Finding destination (avoiding tolls)...";
       try {
-        const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query, countrySet: "GB" });
-        if (!geoRes.results || geoRes.results.length === 0) {
+        const res = await fetch(`https://api.tomtom.com/search/2/fuzzySearch/${encodeURIComponent(query)}.json?key=${API_KEY}&countrySet=GB&limit=1`);
+        const data = await res.json();
+        if (!data.results || data.results.length === 0) {
           document.getElementById("status").innerText = "Destination not found.";
           return;
         }
-        const top = geoRes.results[0];
+        const top = data.results[0];
         const label = top.poi ? top.poi.name : top.address.freeformAddress;
-        destination = { name: label, coords: [top.position.lng, top.position.lat] };
+        destination = { name: label, coords: [top.position.lon, top.position.lat] };
         selectedRouteIndex = 0;
         startNavigation();
       } catch (err) {
@@ -263,54 +262,67 @@
       if (!userPos || !destination) return;
 
       try {
-        const routeRes = await tt.services.calculateRoute({
-          key: API_KEY,
-          locations: `${userPos[0]},${userPos[1]}:${destination.coords[0]},${destination.coords[1]}`,
-          traffic: true,
-          routeType: "fastest",
-          maxAlternatives: 2,
-          instructionsType: "text"
-        });
+        // avoid=tolls ensures Dartford, M6 Toll, etc. are excluded
+        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2`;
+        const res = await fetch(url);
+        const data = await res.json();
 
-        lastRouteResponse = routeRes;
-        const routes = routeRes.routes || [];
-        if (routes.length === 0) return;
-        if (selectedRouteIndex >= routes.length) selectedRouteIndex = 0;
+        availableRoutes = data.routes || [];
+        if (availableRoutes.length === 0) {
+          document.getElementById("status").innerText = "No toll-free route found.";
+          return;
+        }
+        if (selectedRouteIndex >= availableRoutes.length) selectedRouteIndex = 0;
 
-        renderRouteChoices(routes);
-        drawActiveRoute(routeRes, isInitial);
+        renderRouteChoices();
+        drawActiveRoute(isInitial);
       } catch (err) {
         document.getElementById("status").innerText = "Traffic connection error.";
       }
     }
 
-    function renderRouteChoices(routes) {
+    function renderRouteChoices() {
       const container = document.getElementById("routeChoices");
-      if (routes.length <= 1) {
+      if (availableRoutes.length <= 1) {
         container.style.display = "none";
         return;
       }
       container.style.display = "flex";
       container.innerHTML = "";
-      routes.forEach((r, idx) => {
+
+      const baseSecs = availableRoutes[0].summary.travelTimeInSeconds;
+
+      availableRoutes.forEach((r, idx) => {
         const mins = Math.round(r.summary.travelTimeInSeconds / 60);
         const miles = (r.summary.lengthInMeters * 0.000621371).toFixed(1);
+        
+        let diffText = "Fastest";
+        if (idx > 0) {
+          const diffMins = Math.round((r.summary.travelTimeInSeconds - baseSecs) / 60);
+          diffText = diffMins === 0 ? "Same time" : (diffMins > 0 ? `+${diffMins} mins` : `${diffMins} mins`);
+        }
+
         const card = document.createElement("div");
         card.className = `route-card ${idx === selectedRouteIndex ? "active" : ""}`;
-        card.innerHTML = `<b>${mins} min</b><br><span style="color:#a0aec0;">${miles} mi</span>`;
+        card.innerHTML = `<b>${mins} min</b> (${miles} mi)<br><span style="color:#48bb78; font-size:11px;">${diffText}</span>`;
         card.onclick = () => {
           selectedRouteIndex = idx;
-          renderRouteChoices(routes);
-          drawActiveRoute(lastRouteResponse, false);
+          renderRouteChoices();
+          drawActiveRoute(false);
           speak(`Switched to route option ${idx + 1}`);
         };
         container.appendChild(card);
       });
     }
 
-    function drawActiveRoute(routeRes, isInitial) {
-      const geojson = routeRes.toGeoJson();
-      const chosenFeature = geojson.features[selectedRouteIndex] || geojson.features[0];
+    function drawActiveRoute(isInitial) {
+      const route = availableRoutes[selectedRouteIndex];
+      const coords = route.legs.flatMap(leg => leg.points.map(p => [p.longitude, p.latitude]));
+
+      const geojson = {
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: coords }
+      };
 
       if (map.getLayer("route")) {
         map.removeLayer("route");
@@ -320,11 +332,10 @@
       map.addLayer({
         id: "route",
         type: "line",
-        source: { type: "geojson", data: chosenFeature },
+        source: { type: "geojson", data: geojson },
         paint: { "line-color": "#007aff", "line-width": 8 }
       });
 
-      const route = routeRes.routes[selectedRouteIndex];
       const summary = route.summary;
       const mins = Math.round(summary.travelTimeInSeconds / 60);
       const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
@@ -338,11 +349,11 @@
           speak(nextStep.message);
         }
       } else if (isInitial) {
-        speak(`Navigation started. Estimated time ${mins} minutes.`);
+        speak(`Navigation started avoiding tolls. Estimated time ${mins} minutes.`);
       }
 
       document.getElementById("status").className = delayMins > 5 ? "alert" : "";
-      document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay) • Tap cards to switch routes`;
+      document.getElementById("status").innerText = `ETA: ${mins} min (No Tolls) • Tap cards to switch`;
       if (isFollowing) map.setCenter(userPos);
     }
   </script>
