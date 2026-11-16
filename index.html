@@ -37,10 +37,10 @@
       padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
     }
 
-    /* Alternative Route Cards */
-    #routeChoices { display: none; gap: 6px; margin: 6px 0; overflow-x: auto; }
+    /* Alternative Route Cards Bar */
+    #routeChoices { display: none; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
     .route-card {
-      flex: 1; min-width: 95px; background: #222630; border: 1px solid #333;
+      flex: 1; min-width: 95px; background: #222630; border: 2px solid #444;
       padding: 8px; border-radius: 8px; font-size: 12px; text-align: center; cursor: pointer; color: #fff;
     }
     .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.25); }
@@ -95,7 +95,7 @@
     let isFollowing = true;
     let rerouteTimer = null;
     let lastSpokenInstruction = "";
-    let availableRoutes = [];
+    let lastRouteResponse = null;
     let selectedRouteIndex = 0;
 
     const map = tt.map({
@@ -252,7 +252,7 @@
       destination = null;
       if (rerouteTimer) clearInterval(rerouteTimer);
       document.getElementById("stopNavBtn").style.display = "none";
-      document.getElementById("routeChoices.style.display") = "none";
+      document.getElementById("routeChoices").style.display = "none";
       document.getElementById("routeChoices").innerHTML = "";
       document.getElementById("destInput").value = "";
       document.getElementById("status").innerText = "Navigation ended.";
@@ -272,26 +272,27 @@
           instructionsType: "text"
         });
 
-        availableRoutes = routeRes.routes || [];
-        if (availableRoutes.length === 0) return;
-        if (selectedRouteIndex >= availableRoutes.length) selectedRouteIndex = 0;
+        lastRouteResponse = routeRes;
+        const routes = routeRes.routes || [];
+        if (routes.length === 0) return;
+        if (selectedRouteIndex >= routes.length) selectedRouteIndex = 0;
 
-        renderRouteChoices();
-        drawSelectedRoute(routeRes, isInitial);
+        renderRouteChoices(routes);
+        drawActiveRoute(routeRes, isInitial);
       } catch (err) {
         document.getElementById("status").innerText = "Traffic connection error.";
       }
     }
 
-    function renderRouteChoices() {
+    function renderRouteChoices(routes) {
       const container = document.getElementById("routeChoices");
-      if (availableRoutes.length <= 1) {
+      if (routes.length <= 1) {
         container.style.display = "none";
         return;
       }
       container.style.display = "flex";
       container.innerHTML = "";
-      availableRoutes.forEach((r, idx) => {
+      routes.forEach((r, idx) => {
         const mins = Math.round(r.summary.travelTimeInSeconds / 60);
         const miles = (r.summary.lengthInMeters * 0.000621371).toFixed(1);
         const card = document.createElement("div");
@@ -299,18 +300,17 @@
         card.innerHTML = `<b>${mins} min</b><br><span style="color:#a0aec0;">${miles} mi</span>`;
         card.onclick = () => {
           selectedRouteIndex = idx;
-          renderRouteChoices();
-          drawSelectedRoute({ routes: availableRoutes, toGeoJson: () => routeResGeoJson }, false);
+          renderRouteChoices(routes);
+          drawActiveRoute(lastRouteResponse, false);
+          speak(`Switched to route option ${idx + 1}`);
         };
         container.appendChild(card);
       });
     }
 
-    let routeResGeoJson = null;
-
-    function drawSelectedRoute(routeRes, isInitial) {
-      routeResGeoJson = routeRes.toGeoJson ? routeRes.toGeoJson() : routeRes;
-      const chosenFeature = routeResGeoJson.features[selectedRouteIndex] || routeResGeoJson.features[0];
+    function drawActiveRoute(routeRes, isInitial) {
+      const geojson = routeRes.toGeoJson();
+      const chosenFeature = geojson.features[selectedRouteIndex] || geojson.features[0];
 
       if (map.getLayer("route")) {
         map.removeLayer("route");
@@ -324,7 +324,7 @@
         paint: { "line-color": "#007aff", "line-width": 8 }
       });
 
-      const route = availableRoutes[selectedRouteIndex];
+      const route = routeRes.routes[selectedRouteIndex];
       const summary = route.summary;
       const mins = Math.round(summary.travelTimeInSeconds / 60);
       const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
@@ -342,7 +342,7 @@
       }
 
       document.getElementById("status").className = delayMins > 5 ? "alert" : "";
-      document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay) • Auto-divert active`;
+      document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay) • Tap cards to switch routes`;
       if (isFollowing) map.setCenter(userPos);
     }
   </script>
