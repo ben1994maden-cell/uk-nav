@@ -39,7 +39,7 @@
     }
     .suggestion-item:active { background: #007aff; }
 
-    /* 3 Route Option Cards */
+    /* Route Option Cards */
     #routeChoices { display: none; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
     .route-card {
       flex: 1; min-width: 90px; background: #222630; border: 2px solid #444;
@@ -336,15 +336,25 @@
     async function calculateAndDrawRoute(isInitial) {
       if (!userPos || !destination) return;
       try {
-        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&maxAlternatives=2&guidance=true`;
-        const res = await fetch(url);
-        const data = await res.json();
+        let url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&maxAlternatives=2&guidance=true&travelMode=car`;
+        let res = await fetch(url);
+        let data = await res.json();
         
         availableRoutes = data.routes || [];
+
+        // Fallback if maxAlternatives=2 fails
+        if (availableRoutes.length === 0) {
+          const fallbackUrl = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&guidance=true&travelMode=car`;
+          const res2 = await fetch(fallbackUrl);
+          const data2 = await res2.json();
+          availableRoutes = data2.routes || [];
+        }
+
         if (availableRoutes.length === 0) {
           document.getElementById("status").innerText = "Could not calculate route.";
           return;
         }
+
         if (selectedRouteIndex >= availableRoutes.length) selectedRouteIndex = 0;
 
         renderRouteChoices();
@@ -436,39 +446,4 @@
         distMeters = step.routeOffsetInMeters;
       }
 
-      if (distMeters < 20 && currentInstructionIndex < currentInstructions.length - 1) {
-        currentInstructionIndex++;
-        updateGuidanceDisplay();
-        return;
-      }
-
-      document.getElementById("distanceText").innerText = formatDistance(distMeters);
-      if (distMeters <= 200 && distMeters > 140) {
-        speak(step.message);
-      }
-    }
-
-    function updateGuidanceDisplay() {
-      const step = currentInstructions[currentInstructionIndex];
-      if (!step) return;
-
-      document.getElementById("instructionText").innerText = step.message || "Continue on route";
-      document.getElementById("guidanceBox").style.display = "block";
-
-      const laneBanner = document.getElementById("laneBanner");
-      laneBanner.innerHTML = "";
-      if (step.laneInfo?.lanes?.length > 0) {
-        laneBanner.style.display = "flex";
-        step.laneInfo.lanes.forEach(l => {
-          const div = document.createElement("div");
-          div.className = `lane-icon ${l.valid ? 'active' : ''}`;
-          div.innerText = l.direction?.includes("LEFT") ? "⬅" : l.direction?.includes("RIGHT") ? "➡" : "⬆";
-          laneBanner.appendChild(div);
-        });
-      } else {
-        laneBanner.style.display = "none";
-      }
-    }
-  </script>
-</body>
-</html>
+      if (distMeters < 20 && currentInstructionIndex < currentInstructions.length -
