@@ -40,6 +40,16 @@
     #status { font-size: 13px; color: #a0aec0; }
     .alert { color: #48bb78 !important; font-weight: 600; }
 
+    /* Speedometer & Recenter Buttons */
+    #speedBox {
+      position: absolute; bottom: 30px; left: 12px; z-index: 15;
+      background: rgba(18, 20, 26, 0.94); padding: 10px 14px;
+      border-radius: 14px; border: 1px solid #333; color: #fff; text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none;
+    }
+    #currentSpeed { font-size: 24px; font-weight: 800; line-height: 1; }
+    #speedUnit { font-size: 10px; color: #a0aec0; margin-top: 2px; font-weight: 600; }
+
     #recenterBtn {
       position: absolute; bottom: 30px; right: 12px; z-index: 15;
       display: none; background: #007aff; color: #fff; border: none;
@@ -60,6 +70,12 @@
   </div>
 
   <div id="map"></div>
+
+  <div id="speedBox">
+    <div id="currentSpeed">0</div>
+    <div id="speedUnit">MPH</div>
+  </div>
+
   <button id="recenterBtn" onclick="recenterMap()">Recenter</button>
 
   <script>
@@ -70,6 +86,7 @@
     let isNavigating = false;
     let isFollowing = true;
     let rerouteTimer = null;
+    let lastSpokenInstruction = "";
 
     const map = tt.map({
       key: API_KEY,
@@ -95,6 +112,17 @@
       map.setCenter(userPos);
     }
 
+    function speak(text) {
+      if (!text || text === lastSpokenInstruction) return;
+      lastSpokenInstruction = text;
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = "en-GB";
+        window.speechSynthesis.speak(msg);
+      }
+    }
+
     function calculateBearing(lat1, lon1, lat2, lon2) {
       const dLon = (lon2 - lon1) * Math.PI / 180;
       lat1 = lat1 * Math.PI / 180;
@@ -110,6 +138,8 @@
         const newLat = pos.coords.latitude;
         const speedMps = pos.coords.speed || 0;
         const mph = Math.round(speedMps * 2.23694);
+
+        document.getElementById("currentSpeed").innerText = mph;
 
         if (prevPos) {
           const bearing = calculateBearing(prevPos[1], prevPos[0], newLat, newLng);
@@ -196,9 +226,9 @@
       isFollowing = true;
       document.getElementById("stopNavBtn").style.display = "inline-block";
 
-      await calculateAndDrawRoute();
+      await calculateAndDrawRoute(true);
       if (rerouteTimer) clearInterval(rerouteTimer);
-      rerouteTimer = setInterval(calculateAndDrawRoute, 30000);
+      rerouteTimer = setInterval(() => calculateAndDrawRoute(false), 30000);
     }
 
     function stopNavigation() {
@@ -211,7 +241,7 @@
       if (map.getLayer("route")) { map.removeLayer("route"); map.removeSource("route"); }
     }
 
-    async function calculateAndDrawRoute() {
+    async function calculateAndDrawRoute(isInitial) {
       if (!userPos || !destination) return;
 
       try {
@@ -219,7 +249,8 @@
           key: API_KEY,
           locations: `${userPos[0]},${userPos[1]}:${destination.coords[0]},${destination.coords[1]}`,
           traffic: true,
-          routeType: "fastest"
+          routeType: "fastest",
+          instructionsType: "text"
         });
 
         const geojson = routeRes.toGeoJson();
@@ -235,9 +266,23 @@
           paint: { "line-color": "#007aff", "line-width": 8 }
         });
 
-        const summary = routeRes.routes[0].summary;
+        const route = routeRes.routes[0];
+        const summary = route.summary;
         const mins = Math.round(summary.travelTimeInSeconds / 60);
         const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
+
+        // Voice instruction trigger
+        const instructions = route.guidance?.instructions || [];
+        const nextStep = instructions[1] || instructions[0];
+        if (nextStep && nextStep.message) {
+          const distMeters = nextStep.routeOffsetInMeters || 0;
+          const distYards = Math.round(distMeters * 1.09361);
+          if (isInitial || distYards < 300) {
+            speak(nextStep.message);
+          }
+        } else if (isInitial) {
+          speak(`Navigation started. Estimated time ${mins} minutes.`);
+        }
 
         document.getElementById("status").className = delayMins > 5 ? "alert" : "";
         document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay) • Auto-divert active`;
