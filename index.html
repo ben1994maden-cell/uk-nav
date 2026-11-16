@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>UK Pro Auto-Divert Nav</title>
+  <title>UK Auto-Divert Nav</title>
   <link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css" />
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/services/services-web.min.js"></script>
@@ -12,43 +12,43 @@
     body, html { height: 100%; width: 100%; overflow: hidden; background: #111; }
     #map { height: 100%; width: 100%; }
 
-    /* Top Control & Turn-by-Turn Panel */
+    /* Top Apple Maps-style Panel */
     #panel {
-      position: absolute; top: 10px; left: 10px; right: 10px; z-index: 15;
-      background: rgba(18, 20, 26, 0.95); color: #fff; padding: 12px;
-      border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.55);
+      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 15;
+      background: rgba(20, 22, 28, 0.95); color: #fff; padding: 12px;
+      border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.5);
     }
     #turnBanner {
       display: none; background: #007aff; padding: 10px 12px; border-radius: 10px;
       margin-bottom: 10px; font-weight: 700; font-size: 16px; line-height: 1.3;
     }
-    #turnSub { font-size: 12px; font-weight: 400; opacity: 0.9; margin-top: 2px; }
+    #turnSub { font-size: 13px; font-weight: 500; opacity: 0.92; margin-top: 2px; }
 
     .row { display: flex; gap: 6px; margin-bottom: 6px; position: relative; }
     input {
-      flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #333;
-      background: #222630; color: #fff; font-size: 14px;
+      flex: 1; padding: 11px; border-radius: 8px; border: 1px solid #333;
+      background: #222630; color: #fff; font-size: 15px;
     }
     button {
-      padding: 10px 12px; border-radius: 8px; border: none;
-      background: #007aff; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer;
+      padding: 11px 14px; border-radius: 8px; border: none;
+      background: #007aff; color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
     }
     .btn-sec { background: #2d3340; }
     .btn-danger { background: #e53e3e; }
 
     #suggestions {
-      position: absolute; top: 44px; left: 0; right: 0; background: #222630;
+      position: absolute; top: 48px; left: 0; right: 0; background: #222630;
       border: 1px solid #444; border-radius: 8px; max-height: 180px; overflow-y: auto;
       z-index: 30; display: none;
     }
     .suggestion-item {
-      padding: 10px 12px; border-bottom: 1px solid #333; font-size: 13px; color: #fff; cursor: pointer;
+      padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
     }
 
-    /* Waypoints & Route Choices */
-    #waypointsList { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+    /* Multi-Stop Tags & Route Options */
+    #waypointsList { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
     .wp-tag {
-      background: #2d3340; font-size: 11px; padding: 4px 8px; border-radius: 6px;
+      background: #2d3340; font-size: 12px; padding: 4px 8px; border-radius: 6px;
       display: flex; align-items: center; gap: 6px;
     }
     #routeChoices { display: none; gap: 6px; margin: 6px 0; overflow-x: auto; }
@@ -56,60 +56,42 @@
       flex: 1; min-width: 95px; background: #222630; border: 1px solid #333;
       padding: 8px; border-radius: 8px; font-size: 12px; text-align: center; cursor: pointer;
     }
-    .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.2); }
+    .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.22); }
 
     #status { font-size: 12px; color: #a0aec0; line-height: 1.4; }
     .alert { color: #48bb78 !important; font-weight: 600; }
 
-    /* Bottom Speedometer & Hazard Controls */
+    /* Bottom Clean HUD: Speedometer & Recenter */
     #bottomHud {
-      position: absolute; bottom: 20px; left: 12px; right: 12px; z-index: 15;
+      position: absolute; bottom: 24px; left: 12px; right: 12px; z-index: 15;
       display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none;
     }
     #speedBox {
-      pointer-events: auto; display: flex; gap: 8px; align-items: center;
-      background: rgba(18, 20, 26, 0.94); padding: 8px 12px; border-radius: 14px;
-      border: 1px solid #333; color: #fff;
+      pointer-events: auto; background: rgba(20, 22, 28, 0.94); padding: 10px 14px;
+      border-radius: 14px; border: 1px solid #333; color: #fff; text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     }
-    #currentSpeed { font-size: 22px; font-weight: 800; line-height: 1; }
-    #speedUnit { font-size: 10px; color: #a0aec0; }
-    #speedLimitSign {
-      width: 38px; height: 38px; border-radius: 50%; background: #fff; color: #111;
-      border: 4px solid #e53e3e; display: flex; align-items: center; justify-content: center;
-      font-weight: 800; font-size: 13px;
-    }
-    .speeding { background: #e53e3e !important; color: #fff !important; }
+    #currentSpeed { font-size: 24px; font-weight: 800; line-height: 1; }
+    #speedUnit { font-size: 10px; color: #a0aec0; margin-top: 2px; font-weight: 600; }
 
-    #actionBtns { pointer-events: auto; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-    .fab {
-      border-radius: 50px; padding: 11px 16px; font-size: 13px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.45);
-    }
-    #recenterBtn { display: none; background: #007aff; }
-    #reportBtn { background: #ed8936; color: #111; font-weight: 700; }
-
-    /* Hazard Report Modal */
-    #reportMenu {
-      display: none; position: absolute; bottom: 80px; right: 12px; z-index: 25;
-      background: #1c2029; border: 1px solid #444; border-radius: 12px; padding: 10px;
-      width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-    }
-    .report-opt {
-      width: 100%; text-align: left; background: #2d3340; margin-bottom: 6px; padding: 9px 12px;
+    #recenterBtn {
+      pointer-events: auto; display: none; background: #007aff; color: #fff;
+      border: none; border-radius: 50px; padding: 12px 18px; font-weight: 600;
+      font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.45);
     }
   </style>
 </head>
 <body>
   <div id="panel">
     <div id="turnBanner">
-      <div id="turnText">Proceed on route</div>
+      <div id="turnText">Follow route</div>
       <div id="turnSub">Calculating distance...</div>
     </div>
 
     <div class="row">
-      <input id="destInput" type="text" placeholder="Destination, postcode, or pit stop..." autocomplete="off" />
+      <input id="destInput" type="text" placeholder="Enter destination or postcode..." autocomplete="off" />
       <div id="suggestions"></div>
-      <button class="btn-sec" onclick="addStopMode()" title="Add multi-stop waypoint">+Stop</button>
+      <button class="btn-sec" onclick="addStopMode()" title="Add a stop">+Stop</button>
       <button onclick="handleGo()">Go</button>
     </div>
 
@@ -118,43 +100,29 @@
 
     <div class="row" style="margin-bottom:0; justify-content: space-between; align-items: center;">
       <div id="status">Waiting for GPS signal...</div>
-      <div style="display:flex; gap:4px;">
-        <button class="btn-sec" style="padding:4px 8px; font-size:11px;" onclick="saveFavorite()">★ Save</button>
-        <button class="btn-sec" style="padding:4px 8px; font-size:11px;" onclick="loadFavorite()">★ Favs</button>
-        <button id="stopNavBtn" class="btn-danger" style="padding:4px 8px; font-size:11px; display:none;" onclick="stopNavigation()">End</button>
+      <div style="display:flex; gap:5px;">
+        <button class="btn-sec" style="padding:5px 9px; font-size:12px;" onclick="saveFavorite()">★ Save</button>
+        <button class="btn-sec" style="padding:5px 9px; font-size:12px;" onclick="loadFavorite()">★ Favs</button>
+        <button id="stopNavBtn" class="btn-danger" style="padding:5px 9px; font-size:12px; display:none;" onclick="stopNavigation()">End</button>
       </div>
     </div>
   </div>
 
   <div id="map"></div>
 
-  <div id="reportMenu">
-    <button class="report-opt" onclick="dropHazard('🚓 Speed Camera')">🚓 Speed Camera</button>
-    <button class="report-opt" onclick="dropHazard('⚠️ Crash / Hazard')">⚠️ Crash / Hazard</button>
-    <button class="report-opt" onclick="dropHazard('🚧 Road Closure')">🚧 Road Closure</button>
-    <button class="report-opt btn-danger" style="margin-bottom:0;" onclick="toggleReportMenu()">Cancel</button>
-  </div>
-
   <div id="bottomHud">
     <div id="speedBox">
-      <div>
-        <div id="currentSpeed">0</div>
-        <div id="speedUnit">MPH</div>
-      </div>
-      <div id="speedLimitSign">--</div>
+      <div id="currentSpeed">0</div>
+      <div id="speedUnit">MPH</div>
     </div>
-
-    <div id="actionBtns">
-      <button id="recenterBtn" class="fab" onclick="recenterMap()">Recenter</button>
-      <button id="reportBtn" class="fab" onclick="toggleReportMenu()">+ Report</button>
-    </div>
+    <button id="recenterBtn" onclick="recenterMap()">Recenter</button>
   </div>
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
     let userPos = [-1.467, 52.523];
     let prevPos = null;
-    let waypoints = []; // Array of { name, coords: [lng, lat] }
+    let waypoints = [];
     let availableRoutes = [];
     let selectedRouteIndex = 0;
     let isNavigating = false;
@@ -162,8 +130,6 @@
     let isAddingStop = false;
     let rerouteTimer = null;
     let lastSpokenInstruction = "";
-    let currentSpeedLimitMph = null;
-    let wakeLock = null;
 
     const map = tt.map({
       key: API_KEY,
@@ -176,12 +142,9 @@
 
     const userMarker = new tt.Marker({ color: "#007aff" }).setLngLat(userPos).addTo(map);
 
-    // Keep screen awake during navigation
     async function requestWakeLock() {
       try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await navigator.wakeLock.request('screen');
-        }
+        if ('wakeLock' in navigator) await navigator.wakeLock.request('screen');
       } catch (e) {}
     }
 
@@ -218,21 +181,12 @@
       return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
     }
 
-    // Live GPS, Speedometer & Auto-Rotation
     navigator.geolocation.watchPosition(
       (pos) => {
         const newLng = pos.coords.longitude;
         const newLat = pos.coords.latitude;
-        const speedMps = pos.coords.speed || 0;
-        const mph = Math.round(speedMps * 2.23694);
-
-        const speedEl = document.getElementById("currentSpeed");
-        speedEl.innerText = mph;
-        if (currentSpeedLimitMph && mph > currentSpeedLimitMph + 2) {
-          speedEl.parentElement.parentElement.classList.add("speeding");
-        } else {
-          speedEl.parentElement.parentElement.classList.remove("speeding");
-        }
+        const mph = Math.round((pos.coords.speed || 0) * 2.23694);
+        document.getElementById("currentSpeed").innerText = mph;
 
         if (prevPos) {
           const bearing = calculateBearing(prevPos[1], prevPos[0], newLat, newLng);
@@ -256,7 +210,6 @@
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
     );
 
-    // Search & Autocomplete
     const destInput = document.getElementById("destInput");
     const suggestionsBox = document.getElementById("suggestions");
 
@@ -284,7 +237,7 @@
               if (isAddingStop) {
                 waypoints.unshift({ name: label.split(",")[0], coords: [item.position.lng, item.position.lat] });
                 isAddingStop = false;
-                destInput.placeholder = "Destination, postcode, or pit stop...";
+                destInput.placeholder = "Enter destination or postcode...";
                 destInput.value = "";
                 renderWaypoints();
                 if (isNavigating) calculateAndDrawRoutes(false);
@@ -306,7 +259,7 @@
     function addStopMode() {
       isAddingStop = true;
       destInput.value = "";
-      destInput.placeholder = "Search pit stop (fuel, coffee, pickup)...";
+      destInput.placeholder = "Search stop (fuel, coffee, pickup)...";
       destInput.focus();
     }
 
@@ -338,11 +291,11 @@
       }
       if (!query) return;
 
-      document.getElementById("status").innerText = "Finding location...";
+      document.getElementById("status").innerText = "Finding destination...";
       try {
         const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query, countrySet: "GB" });
         if (!geoRes.results || geoRes.results.length === 0) {
-          document.getElementById("status").innerText = "Location not found.";
+          document.getElementById("status").innerText = "Destination not found.";
           return;
         }
         const top = geoRes.results[0];
@@ -373,7 +326,7 @@
 
       await calculateAndDrawRoutes(true);
       if (rerouteTimer) clearInterval(rerouteTimer);
-      rerouteTimer = setInterval(() => calculateAndDrawRoutes(false), 20000); // Reroute check every 20s
+      rerouteTimer = setInterval(() => calculateAndDrawRoutes(false), 30000);
     }
 
     function stopNavigation() {
@@ -402,7 +355,7 @@
           routeType: "fastest",
           maxAlternatives: waypoints.length === 1 ? 2 : 0,
           instructionsType: "text",
-          sectionType: "speedLimit"
+          language: "en-GB"
         });
 
         availableRoutes = routeRes.routes || [];
@@ -412,8 +365,8 @@
         renderRouteChoices();
         drawSelectedRoute(routeRes, isInitial);
       } catch (err) {
-        console.error(err);
-        document.getElementById("status").innerText = "Checking traffic connection...";
+        console.error("Route error:", err);
+        document.getElementById("status").innerText = "Navigation update failed.";
       }
     }
 
@@ -460,16 +413,10 @@
       const mins = Math.round(summary.travelTimeInSeconds / 60);
       const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
 
-      // Extract Speed Limit if available
-      const speedSec = route.sections?.find(s => s.sectionType === "speedLimit");
-      if (speedSec && speedSec.maxSpeedLimitInKmh) {
-        currentSpeedLimitMph = Math.round(speedSec.maxSpeedLimitInKmh * 0.621371);
-        document.getElementById("speedLimitSign").innerText = currentSpeedLimitMph;
-      }
+      // Turn-by-turn guidance
+      const instructions = (route.guidance && route.guidance.instructions) ? route.guidance.instructions : [];
+      const nextStep = instructions.length > 1 ? instructions[1] : instructions[0];
 
-      // Extract Step-by-Step Turn Guidance
-      const instructions = route.guidance?.instructions || [];
-      const nextStep = instructions[1] || instructions[0];
       if (nextStep && nextStep.message) {
         const distMeters = nextStep.routeOffsetInMeters || 0;
         const distYards = Math.round(distMeters * 1.09361);
@@ -481,29 +428,17 @@
         if (isInitial || distYards < 300) {
           speak(`In ${distLabel}, ${nextStep.message}`);
         }
+      } else {
+        document.getElementById("turnText").innerText = `Head to ${waypoints[0].name.split(",")[0]}`;
+        document.getElementById("turnSub").innerText = `${(summary.lengthInMeters * 0.000621371).toFixed(1)} miles remaining`;
+        if (isInitial) speak(`Navigation started. Estimated time ${mins} minutes.`);
       }
 
-      document.getElementById("status").className = delayMins > 4 ? "alert" : "";
-      document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m delay) • Auto-reroute active`;
+      document.getElementById("status").className = delayMins > 5 ? "alert" : "";
+      document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay)`;
       if (isFollowing) map.setCenter(userPos);
     }
 
-    // Crowd-Sourced Hazard Reporting
-    function toggleReportMenu() {
-      const m = document.getElementById("reportMenu");
-      m.style.display = m.style.display === "block" ? "none" : "block";
-    }
-
-    function dropHazard(label) {
-      toggleReportMenu();
-      const el = document.createElement("div");
-      el.style.cssText = "background:#111; color:#fff; padding:4px 8px; border-radius:8px; border:2px solid #ed8936; font-size:12px; font-weight:700;";
-      el.innerText = label;
-      new tt.Marker({ element: el }).setLngLat(userPos).addTo(map);
-      speak(`${label.replace(/[^a-zA-Z ]/g, "")} reported on map.`);
-    }
-
-    // Saved Favorites (Local Storage)
     function saveFavorite() {
       if (waypoints.length === 0) return alert("Set a destination first to save it.");
       const favs = JSON.parse(localStorage.getItem("ukNavFavs") || "[]");
