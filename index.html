@@ -36,7 +36,6 @@
       padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
     }
 
-    /* Alternative Route Cards Bar */
     #routeChoices { display: none; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
     .route-card {
       flex: 1; min-width: 100px; background: #222630; border: 2px solid #444;
@@ -96,6 +95,23 @@
     let lastSpokenInstruction = "";
     let availableRoutes = [];
     let selectedRouteIndex = 0;
+    let wakeLock = null;
+
+    // Request screen wake lock so phone doesn't go dark
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (err) {}
+    }
+
+    // Re-acquire wake lock if user switches back to the app tab
+    document.addEventListener('visibilitychange', async () => {
+      if (wakeLock !== null && document.visibilityState === 'visible' && isNavigating) {
+        await requestWakeLock();
+      }
+    });
 
     const map = tt.map({
       key: API_KEY,
@@ -237,6 +253,9 @@
       isFollowing = true;
       document.getElementById("stopNavBtn").style.display = "inline-block";
 
+      // Keep screen awake while navigating
+      await requestWakeLock();
+
       if ("speechSynthesis" in window) {
         window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
       }
@@ -250,6 +269,12 @@
       isNavigating = false;
       destination = null;
       if (rerouteTimer) clearInterval(rerouteTimer);
+      
+      // Release wake lock so phone can sleep normally when stopped
+      if (wakeLock !== null) {
+        wakeLock.release().then(() => { wakeLock = null; });
+      }
+
       document.getElementById("stopNavBtn").style.display = "none";
       document.getElementById("routeChoices").style.display = "none";
       document.getElementById("routeChoices").innerHTML = "";
@@ -262,7 +287,6 @@
       if (!userPos || !destination) return;
 
       try {
-        // avoid=tolls ensures Dartford, M6 Toll, etc. are excluded
         const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2`;
         const res = await fetch(url);
         const data = await res.json();
