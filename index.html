@@ -1,16 +1,9 @@
-Here is the completely rewritten and fixed script.
-What Was Fixed & Upgraded:
- * Multi-Engine Search (No More "Search Error"): The search now checks TomTom Search first, and automatically falls back to Photon Komoot if needed. It successfully populates the dropdown and handles address/postcode lookups without crashing.
- * 3 Route Options: Configured TomTom routing with maxAlternatives=2, which calculates and displays 3 route option cards right at the top so you can easily compare and tap between them.
- * 30-Second Live Traffic Updates: Automatically recalculates and updates traffic conditions every 30 seconds without interrupting your voice guidance.
- * UK Lane Guidance & Smart Yards/Miles: Automatically switches distance to yards when within 400 meters of a junction or roundabout, and shows visual lane arrows.
-Complete Fixed HTML Script
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>UK Auto-Divert Nav - No Tolls</title>
+  <title>UK Auto-Divert Nav</title>
   <link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css" />
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
   <style>
@@ -213,14 +206,14 @@ Complete Fixed HTML Script
           updateGuidanceProgress(newLat, newLng);
         } else {
           map.setCenter(userPos);
-          document.getElementById("status").innerText = "GPS locked. Ready (No Tolls).";
+          document.getElementById("status").innerText = "GPS locked. Ready.";
         }
       },
       () => { document.getElementById("status").innerText = "GPS signal lost."; },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
     );
 
-    // Robust Multi-Engine Search
+    // Multi-Engine Search
     async function fetchPlaces(query) {
       try {
         const res = await fetch(`https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${API_KEY}&countrySet=GB&limit=5`);
@@ -343,14 +336,13 @@ Complete Fixed HTML Script
     async function calculateAndDrawRoute(isInitial) {
       if (!userPos || !destination) return;
       try {
-        // maxAlternatives=2 requests up to 3 route options total
-        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2&guidance=true`;
+        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&maxAlternatives=2&guidance=true`;
         const res = await fetch(url);
         const data = await res.json();
         
         availableRoutes = data.routes || [];
         if (availableRoutes.length === 0) {
-          document.getElementById("status").innerText = "No toll-free route found.";
+          document.getElementById("status").innerText = "Could not calculate route.";
           return;
         }
         if (selectedRouteIndex >= availableRoutes.length) selectedRouteIndex = 0;
@@ -420,7 +412,7 @@ Complete Fixed HTML Script
       const delayMins = Math.round((route.summary.trafficDelayInSeconds || 0) / 60);
 
       document.getElementById("status").className = delayMins > 5 ? "alert" : "";
-      document.getElementById("status").innerText = `ETA: ${mins} min (No Tolls • Live Traffic)`;
+      document.getElementById("status").innerText = `ETA: ${mins} min (Live Traffic Active)`;
 
       if (isInitial) {
         speak(`Navigation started. Estimated time ${mins} minutes.`);
@@ -480,4 +472,3 @@ Complete Fixed HTML Script
   </script>
 </body>
 </html>
-
