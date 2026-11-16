@@ -12,77 +12,82 @@
     #map { height: 100%; width: 100%; }
 
     #panel {
-      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 15;
-      background: rgba(18, 20, 26, 0.95); color: #fff; padding: 12px;
+      position: absolute; top: 10px; left: 10px; right: 10px; z-index: 15;
+      background: rgba(18, 20, 26, 0.95); color: #fff; padding: 10px;
       border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      display: flex; flex-direction: column; gap: 8px;
     }
-    .row { display: flex; gap: 8px; margin-bottom: 8px; position: relative; }
+    .row { display: flex; gap: 8px; position: relative; width: 100%; }
     input {
-      flex: 1; padding: 11px; border-radius: 8px; border: 1px solid #333;
-      background: #222630; color: #fff; font-size: 15px;
+      flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #333;
+      background: #222630; color: #fff; font-size: 14px; outline: none;
     }
     button {
-      padding: 11px 16px; border-radius: 8px; border: none;
+      padding: 10px 14px; border-radius: 8px; border: none;
       background: #007aff; color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
     }
     .btn-danger { background: #e53e3e; }
 
     #suggestions {
-      position: absolute; top: 48px; left: 0; right: 0; background: #222630;
-      border: 1px solid #444; border-radius: 8px; max-height: 180px; overflow-y: auto;
+      position: absolute; top: 45px; left: 0; right: 0; background: #222630;
+      border: 1px solid #444; border-radius: 8px; max-height: 160px; overflow-y: auto;
       z-index: 30; display: none;
     }
     .suggestion-item {
-      padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
+      padding: 10px 12px; border-bottom: 1px solid #333; font-size: 13px; color: #fff; cursor: pointer;
     }
 
-    #routeChoices { display: none; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
+    #routeChoices { display: none; gap: 6px; overflow-x: auto; width: 100%; }
     .route-card {
-      flex: 1; min-width: 100px; background: #222630; border: 2px solid #444;
-      padding: 8px; border-radius: 8px; font-size: 12px; text-align: center; cursor: pointer; color: #fff;
+      flex: 1; min-width: 90px; background: #222630; border: 2px solid #444;
+      padding: 6px; border-radius: 8px; font-size: 11px; text-align: center; cursor: pointer; color: #fff;
     }
     .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.25); }
 
-    #status { font-size: 13px; color: #a0aec0; }
+    #status { font-size: 12px; color: #a0aec0; }
     .alert { color: #48bb78 !important; font-weight: 600; }
 
-    /* Turn Guidance Banner & Lane Guidance */
+    /* Turn Guidance & Lane Guidance Banner */
     #guidanceBanner {
-      position: absolute; top: 135px; left: 12px; right: 12px; z-index: 15;
+      position: absolute; top: 125px; left: 10px; right: 10px; z-index: 15;
       background: rgba(18, 20, 26, 0.96); border: 1px solid #007aff; color: #fff;
-      padding: 12px 16px; border-radius: 14px; display: none; flex-direction: column; gap: 10px;
+      padding: 10px 14px; border-radius: 14px; display: none; flex-direction: column; gap: 8px;
       box-shadow: 0 6px 24px rgba(0,0,0,0.6);
     }
-    .top-instruction-row { display: flex; align-items: center; gap: 14px; }
-    #turnIcon { font-size: 32px; min-width: 40px; text-align: center; }
+    .top-instruction-row { display: flex; align-items: center; gap: 12px; }
+    #turnIcon { font-size: 28px; min-width: 36px; text-align: center; }
     #turnDetails { display: flex; flex-direction: column; gap: 2px; }
-    #turnDistance { font-size: 18px; font-weight: 800; color: #48bb78; }
-    #turnInstruction { font-size: 13px; color: #cbd5e0; line-height: 1.2; }
+    #turnDistance { font-size: 16px; font-weight: 800; color: #48bb78; }
+    #turnInstruction { font-size: 12px; color: #cbd5e0; line-height: 1.2; }
 
     /* Lane Guidance Box */
     #laneContainer {
       display: none; align-items: center; justify-content: center; gap: 6px;
-      background: #11141a; padding: 8px; border-radius: 8px; border: 1px solid #333;
+      background: #11141a; padding: 6px; border-radius: 6px; border: 1px solid #333;
     }
     .lane-pill {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      width: 32px; height: 38px; border-radius: 6px; background: #222630; color: #718096; font-size: 18px;
+      width: 28px; height: 32px; border-radius: 6px; background: #222630; color: #718096; font-size: 15px;
     }
-    .lane-pill.active { background: #007aff; color: #fff; font-weight: bold; box-shadow: 0 0 8px rgba(0,122,255,0.6); }
+    .lane-pill.active { background: #007aff; color: #fff; font-weight: bold; box-shadow: 0 0 6px rgba(0,122,255,0.6); }
 
-    #speedBox {
-      position: absolute; bottom: 30px; left: 12px; z-index: 15;
-      background: rgba(18, 20, 26, 0.94); padding: 10px 14px;
-      border-radius: 14px; border: 1px solid #333; color: #fff; text-align: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none;
+    /* Bottom Widgets */
+    .bottom-left-stack {
+      position: absolute; bottom: 30px; left: 10px; z-index: 15;
+      display: flex; gap: 8px; pointer-events: none;
     }
-    #currentSpeed { font-size: 24px; font-weight: 800; line-height: 1; }
-    #speedUnit { font-size: 10px; color: #a0aec0; margin-top: 2px; font-weight: 600; }
+    .widget-box {
+      background: rgba(18, 20, 26, 0.94); padding: 8px 12px;
+      border-radius: 12px; border: 1px solid #333; color: #fff; text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: auto;
+    }
+    .widget-val { font-size: 20px; font-weight: 800; line-height: 1; }
+    .widget-lbl { font-size: 9px; color: #a0aec0; margin-top: 2px; font-weight: 600; }
 
     #recenterBtn {
-      position: absolute; bottom: 30px; right: 12px; z-index: 15;
+      position: absolute; bottom: 30px; right: 10px; z-index: 15;
       display: none; background: #007aff; color: #fff; border: none;
-      border-radius: 50px; padding: 12px 18px; font-weight: 600; font-size: 14px;
+      border-radius: 50px; padding: 10px 16px; font-weight: 600; font-size: 13px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     }
   </style>
@@ -113,9 +118,15 @@
 
   <div id="map"></div>
 
-  <div id="speedBox">
-    <div id="currentSpeed">0</div>
-    <div id="speedUnit">MPH</div>
+  <div class="bottom-left-stack">
+    <div class="widget-box">
+      <div id="currentSpeed" class="widget-val">0</div>
+      <div class="widget-lbl">MPH</div>
+    </div>
+    <div class="widget-box">
+      <div id="currentHeading" class="widget-val">N</div>
+      <div class="widget-lbl">HEADING</div>
+    </div>
   </div>
 
   <button id="recenterBtn" onclick="recenterMap()">Recenter</button>
@@ -182,6 +193,11 @@
       }
     }
 
+    function getCardinalDirection(angle) {
+      const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+      return directions[Math.round(angle / 45) % 8];
+    }
+
     function getTurnSymbol(turnType) {
       if (!turnType) return "⬆️";
       const t = turnType.toLowerCase();
@@ -200,7 +216,6 @@
         const miles = (yards / 1760).toFixed(1);
         return `In ${miles} mile${miles == 1 ? '' : 's'}`;
       } else if (yards >= 100) {
-        // Round to nearest 10 or 50 yards for clean display
         const roundedYards = Math.round(yards / 25) * 25;
         return `In ${roundedYards} yds`;
       } else {
@@ -228,8 +243,11 @@
 
         if (prevPos) {
           const bearing = calculateBearing(prevPos[1], prevPos[0], newLat, newLng);
-          if (isNavigating && isFollowing && !isNaN(bearing) && mph > 2) {
-            map.setBearing(bearing);
+          if (!isNaN(bearing)) {
+            document.getElementById("currentHeading").innerText = getCardinalDirection(bearing);
+            if (isNavigating && isFollowing && mph > 2) {
+              map.setBearing(bearing);
+            }
           }
         }
 
@@ -348,7 +366,7 @@
       if (!userPos || !destination) return;
 
       try {
-        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2&instructionsType=text`;
+        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2&instructionsType=tagged&computeTravelTimeFor=all`;
         const res = await fetch(url);
         const data = await res.json();
 
@@ -389,7 +407,7 @@
 
         const card = document.createElement("div");
         card.className = `route-card ${idx === selectedRouteIndex ? "active" : ""}`;
-        card.innerHTML = `<b>${mins} min</b> (${miles} mi)<br><span style="color:#48bb78; font-size:11px;">${diffText}</span>`;
+        card.innerHTML = `<b>${mins} min</b> (${miles} mi)<br><span style="color:#48bb78; font-size:10px;">${diffText}</span>`;
         card.onclick = () => {
           selectedRouteIndex = idx;
           renderRouteChoices();
@@ -425,7 +443,7 @@
       const mins = Math.round(summary.travelTimeInSeconds / 60);
       const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
 
-      // Parse Instructions & Guidance
+      // Parse Instructions & Guidance safely
       const instructions = route.guidance?.instructions || [];
       const nextStep = instructions[1] || instructions[0];
 
@@ -436,7 +454,7 @@
         document.getElementById("turnDistance").innerText = formatDistance(distMeters);
         document.getElementById("turnInstruction").innerText = nextStep.message || "Continue ahead";
 
-        // Handle Lane Guidance Data if present in TomTom response
+        // Lane Guidance
         const laneContainer = document.getElementById("laneContainer");
         if (nextStep.lanes && nextStep.lanes.length > 0) {
           laneContainer.style.display = "flex";
