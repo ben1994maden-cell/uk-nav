@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>UK Auto-Divert Nav - No Tolls</title>
+  <title>UK Pro-Nav - Lane & Compass</title>
   <link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css" />
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
   <style>
@@ -36,6 +36,17 @@
       padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
     }
 
+    /* Turn-by-Turn Guidance Banner */
+    #guidanceCard {
+      display: none; background: #1c212c; border: 1px solid #333; border-radius: 10px;
+      padding: 10px; margin-bottom: 8px; align-items: center; gap: 12px;
+    }
+    #turnIcon { font-size: 28px; font-weight: bold; color: #48bb78; min-width: 36px; text-align: center; }
+    #turnDetails { flex: 1; }
+    #turnDist { font-size: 14px; font-weight: 700; color: #007aff; }
+    #turnInst { font-size: 13px; color: #fff; margin-top: 2px; }
+    #laneInfo { font-size: 11px; color: #a0aec0; margin-top: 3px; background: #111; padding: 3px 6px; border-radius: 4px; display: inline-block; }
+
     #routeChoices { display: none; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
     .route-card {
       flex: 1; min-width: 100px; background: #222630; border: 2px solid #444;
@@ -43,17 +54,21 @@
     }
     .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.25); }
 
-    #status { font-size: 13px; color: #a0aec0; }
+    #status { font-size: 12px; color: #a0aec0; }
     .alert { color: #48bb78 !important; font-weight: 600; }
 
-    #speedBox {
+    /* Widgets Bottom Left */
+    #leftWidgets {
       position: absolute; bottom: 30px; left: 12px; z-index: 15;
+      display: flex; gap: 8px; pointer-events: none;
+    }
+    .widget-box {
       background: rgba(18, 20, 26, 0.94); padding: 10px 14px;
       border-radius: 14px; border: 1px solid #333; color: #fff; text-align: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     }
-    #currentSpeed { font-size: 24px; font-weight: 800; line-height: 1; }
-    #speedUnit { font-size: 10px; color: #a0aec0; margin-top: 2px; font-weight: 600; }
+    .widget-val { font-size: 20px; font-weight: 800; line-height: 1; }
+    .widget-lbl { font-size: 10px; color: #a0aec0; margin-top: 2px; font-weight: 600; }
 
     #recenterBtn {
       position: absolute; bottom: 30px; right: 12px; z-index: 15;
@@ -71,15 +86,32 @@
       <button onclick="handleGo()">Go</button>
       <button id="stopNavBtn" class="btn-danger" style="display:none;" onclick="stopNavigation()">End</button>
     </div>
+
+    <!-- Active Guidance Banner -->
+    <div id="guidanceCard">
+      <div id="turnIcon">⬆️</div>
+      <div id="turnDetails">
+        <div id="turnDist">In 0 yards</div>
+        <div id="turnInst">Awaiting navigation instruction...</div>
+        <div id="laneInfo" style="display:none;"></div>
+      </div>
+    </div>
+
     <div id="routeChoices"></div>
     <div id="status">Waiting for GPS signal... (No Tolls Active)</div>
   </div>
 
   <div id="map"></div>
 
-  <div id="speedBox">
-    <div id="currentSpeed">0</div>
-    <div id="speedUnit">MPH</div>
+  <div id="leftWidgets">
+    <div class="widget-box">
+      <div id="currentSpeed" class="widget-val">0</div>
+      <div class="widget-lbl">MPH</div>
+    </div>
+    <div class="widget-box">
+      <div id="compassVal" class="widget-val">N</div>
+      <div class="widget-lbl">HEADING</div>
+    </div>
   </div>
 
   <button id="recenterBtn" onclick="recenterMap()">Recenter</button>
@@ -97,16 +129,12 @@
     let selectedRouteIndex = 0;
     let wakeLock = null;
 
-    // Request screen wake lock so phone doesn't go dark
     async function requestWakeLock() {
       try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await navigator.wakeLock.request('screen');
-        }
+        if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
       } catch (err) {}
     }
 
-    // Re-acquire wake lock if user switches back to the app tab
     document.addEventListener('visibilitychange', async () => {
       if (wakeLock !== null && document.visibilityState === 'visible' && isNavigating) {
         await requestWakeLock();
@@ -148,6 +176,11 @@
       }
     }
 
+    function getCardinalDirection(angle) {
+      const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+      return directions[Math.round(angle / 45) % 8];
+    }
+
     function calculateBearing(lat1, lon1, lat2, lon2) {
       const dLon = (lon2 - lon1) * Math.PI / 180;
       lat1 = lat1 * Math.PI / 180;
@@ -168,8 +201,11 @@
 
         if (prevPos) {
           const bearing = calculateBearing(prevPos[1], prevPos[0], newLat, newLng);
-          if (isNavigating && isFollowing && !isNaN(bearing) && mph > 2) {
-            map.setBearing(bearing);
+          if (!isNaN(bearing)) {
+            document.getElementById("compassVal").innerText = getCardinalDirection(bearing);
+            if (isNavigating && isFollowing && mph > 2) {
+              map.setBearing(bearing);
+            }
           }
         }
 
@@ -252,8 +288,8 @@
       isNavigating = true;
       isFollowing = true;
       document.getElementById("stopNavBtn").style.display = "inline-block";
+      document.getElementById("guidanceCard").style.display = "flex";
 
-      // Keep screen awake while navigating
       await requestWakeLock();
 
       if ("speechSynthesis" in window) {
@@ -269,13 +305,12 @@
       isNavigating = false;
       destination = null;
       if (rerouteTimer) clearInterval(rerouteTimer);
-      
-      // Release wake lock so phone can sleep normally when stopped
       if (wakeLock !== null) {
         wakeLock.release().then(() => { wakeLock = null; });
       }
 
       document.getElementById("stopNavBtn").style.display = "none";
+      document.getElementById("guidanceCard").style.display = "none";
       document.getElementById("routeChoices").style.display = "none";
       document.getElementById("routeChoices").innerHTML = "";
       document.getElementById("destInput").value = "";
@@ -287,7 +322,7 @@
       if (!userPos || !destination) return;
 
       try {
-        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2`;
+        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2&instructionsType=text`;
         const res = await fetch(url);
         const data = await res.json();
 
@@ -339,6 +374,16 @@
       });
     }
 
+    function getTurnSymbol(turnType) {
+      if (!turnType) return "⬆️";
+      const t = turnType.toLowerCase();
+      if (t.includes("right")) return "↗️";
+      if (t.includes("left")) return "↖️";
+      if (t.includes("roundabout")) return "🔄";
+      if (t.includes("uturn")) return "↩️";
+      return "⬆️";
+    }
+
     function drawActiveRoute(isInitial) {
       const route = availableRoutes[selectedRouteIndex];
       const coords = route.legs.flatMap(leg => leg.points.map(p => [p.longitude, p.latitude]));
@@ -364,12 +409,29 @@
       const mins = Math.round(summary.travelTimeInSeconds / 60);
       const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
 
+      // Parse Turn Guidance and Distance
       const instructions = route.guidance?.instructions || [];
       const nextStep = instructions[1] || instructions[0];
-      if (nextStep && nextStep.message) {
+      
+      if (nextStep) {
         const distMeters = nextStep.routeOffsetInMeters || 0;
-        const distYards = Math.round(distMeters * 1.09361);
-        if (isInitial || distYards < 300) {
+        const yards = Math.round(distMeters * 1.09361);
+        const distString = yards > 1760 ? `In ${(yards / 1760).toFixed(1)} miles` : `In ${yards} yards`;
+
+        document.getElementById("turnIcon").innerText = getTurnSymbol(nextStep.turnDirection || nextStep.message);
+        document.getElementById("turnDist").innerText = distString;
+        document.getElementById("turnInst").innerText = nextStep.message;
+
+        // Lane Guidance / Exit Info if available from TomTom API
+        const laneInfoEl = document.getElementById("laneInfo");
+        if (nextStep.signpostText) {
+          laneInfoEl.innerText = `Exit sign: ${nextStep.signpostText}`;
+          laneInfoEl.style.display = "inline-block";
+        } else {
+          laneInfoEl.style.display = "none";
+        }
+
+        if (isInitial || yards < 300) {
           speak(nextStep.message);
         }
       } else if (isInitial) {
