@@ -37,10 +37,17 @@
       padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
     }
 
+    /* Alternative Route Cards */
+    #routeChoices { display: none; gap: 6px; margin: 6px 0; overflow-x: auto; }
+    .route-card {
+      flex: 1; min-width: 95px; background: #222630; border: 1px solid #333;
+      padding: 8px; border-radius: 8px; font-size: 12px; text-align: center; cursor: pointer; color: #fff;
+    }
+    .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.25); }
+
     #status { font-size: 13px; color: #a0aec0; }
     .alert { color: #48bb78 !important; font-weight: 600; }
 
-    /* Speedometer & Recenter Buttons */
     #speedBox {
       position: absolute; bottom: 30px; left: 12px; z-index: 15;
       background: rgba(18, 20, 26, 0.94); padding: 10px 14px;
@@ -66,6 +73,7 @@
       <button onclick="handleGo()">Go</button>
       <button id="stopNavBtn" class="btn-danger" style="display:none;" onclick="stopNavigation()">End</button>
     </div>
+    <div id="routeChoices"></div>
     <div id="status">Waiting for GPS signal...</div>
   </div>
 
@@ -87,6 +95,8 @@
     let isFollowing = true;
     let rerouteTimer = null;
     let lastSpokenInstruction = "";
+    let availableRoutes = [];
+    let selectedRouteIndex = 0;
 
     const map = tt.map({
       key: API_KEY,
@@ -189,6 +199,7 @@
               suggestionsBox.style.display = "none";
               destination = { name: label, coords: [item.position.lng, item.position.lat] };
               destInput.value = label;
+              selectedRouteIndex = 0;
               startNavigation();
             };
             suggestionsBox.appendChild(div);
@@ -214,6 +225,7 @@
         const top = geoRes.results[0];
         const label = top.poi ? top.poi.name : top.address.freeformAddress;
         destination = { name: label, coords: [top.position.lng, top.position.lat] };
+        selectedRouteIndex = 0;
         startNavigation();
       } catch (err) {
         document.getElementById("status").innerText = "Search error.";
@@ -226,7 +238,6 @@
       isFollowing = true;
       document.getElementById("stopNavBtn").style.display = "inline-block";
 
-      // Unlock browser speech on user tap
       if ("speechSynthesis" in window) {
         window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
       }
@@ -241,6 +252,8 @@
       destination = null;
       if (rerouteTimer) clearInterval(rerouteTimer);
       document.getElementById("stopNavBtn").style.display = "none";
+      document.getElementById("routeChoices.style.display") = "none";
+      document.getElementById("routeChoices").innerHTML = "";
       document.getElementById("destInput").value = "";
       document.getElementById("status").innerText = "Navigation ended.";
       if (map.getLayer("route")) { map.removeLayer("route"); map.removeSource("route"); }
@@ -255,45 +268,82 @@
           locations: `${userPos[0]},${userPos[1]}:${destination.coords[0]},${destination.coords[1]}`,
           traffic: true,
           routeType: "fastest",
+          maxAlternatives: 2,
           instructionsType: "text"
         });
 
-        const geojson = routeRes.toGeoJson();
-        if (map.getLayer("route")) {
-          map.removeLayer("route");
-          map.removeSource("route");
-        }
+        availableRoutes = routeRes.routes || [];
+        if (availableRoutes.length === 0) return;
+        if (selectedRouteIndex >= availableRoutes.length) selectedRouteIndex = 0;
 
-        map.addLayer({
-          id: "route",
-          type: "line",
-          source: { type: "geojson", data: geojson },
-          paint: { "line-color": "#007aff", "line-width": 8 }
-        });
-
-        const route = routeRes.routes[0];
-        const summary = route.summary;
-        const mins = Math.round(summary.travelTimeInSeconds / 60);
-        const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
-
-        const instructions = route.guidance?.instructions || [];
-        const nextStep = instructions[1] || instructions[0];
-        if (nextStep && nextStep.message) {
-          const distMeters = nextStep.routeOffsetInMeters || 0;
-          const distYards = Math.round(distMeters * 1.09361);
-          if (isInitial || distYards < 300) {
-            speak(nextStep.message);
-          }
-        } else if (isInitial) {
-          speak(`Navigation started. Estimated time ${mins} minutes.`);
-        }
-
-        document.getElementById("status").className = delayMins > 5 ? "alert" : "";
-        document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay) • Auto-divert active`;
-        if (isFollowing) map.setCenter(userPos);
+        renderRouteChoices();
+        drawSelectedRoute(routeRes, isInitial);
       } catch (err) {
         document.getElementById("status").innerText = "Traffic connection error.";
       }
+    }
+
+    function renderRouteChoices() {
+      const container = document.getElementById("routeChoices");
+      if (availableRoutes.length <= 1) {
+        container.style.display = "none";
+        return;
+      }
+      container.style.display = "flex";
+      container.innerHTML = "";
+      availableRoutes.forEach((r, idx) => {
+        const mins = Math.round(r.summary.travelTimeInSeconds / 60);
+        const miles = (r.summary.lengthInMeters * 0.000621371).toFixed(1);
+        const card = document.createElement("div");
+        card.className = `route-card ${idx === selectedRouteIndex ? "active" : ""}`;
+        card.innerHTML = `<b>${mins} min</b><br><span style="color:#a0aec0;">${miles} mi</span>`;
+        card.onclick = () => {
+          selectedRouteIndex = idx;
+          renderRouteChoices();
+          drawSelectedRoute({ routes: availableRoutes, toGeoJson: () => routeResGeoJson }, false);
+        };
+        container.appendChild(card);
+      });
+    }
+
+    let routeResGeoJson = null;
+
+    function drawSelectedRoute(routeRes, isInitial) {
+      routeResGeoJson = routeRes.toGeoJson ? routeRes.toGeoJson() : routeRes;
+      const chosenFeature = routeResGeoJson.features[selectedRouteIndex] || routeResGeoJson.features[0];
+
+      if (map.getLayer("route")) {
+        map.removeLayer("route");
+        map.removeSource("route");
+      }
+
+      map.addLayer({
+        id: "route",
+        type: "line",
+        source: { type: "geojson", data: chosenFeature },
+        paint: { "line-color": "#007aff", "line-width": 8 }
+      });
+
+      const route = availableRoutes[selectedRouteIndex];
+      const summary = route.summary;
+      const mins = Math.round(summary.travelTimeInSeconds / 60);
+      const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
+
+      const instructions = route.guidance?.instructions || [];
+      const nextStep = instructions[1] || instructions[0];
+      if (nextStep && nextStep.message) {
+        const distMeters = nextStep.routeOffsetInMeters || 0;
+        const distYards = Math.round(distMeters * 1.09361);
+        if (isInitial || distYards < 300) {
+          speak(nextStep.message);
+        }
+      } else if (isInitial) {
+        speak(`Navigation started. Estimated time ${mins} minutes.`);
+      }
+
+      document.getElementById("status").className = delayMins > 5 ? "alert" : "";
+      document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay) • Auto-divert active`;
+      if (isFollowing) map.setCenter(userPos);
     }
   </script>
 </body>
