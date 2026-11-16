@@ -47,7 +47,6 @@
     #status { font-size: 12px; color: #a0aec0; }
     .alert { color: #48bb78 !important; font-weight: 600; }
 
-    /* Turn Guidance & Lane Guidance Banner */
     #guidanceBanner {
       position: absolute; top: 125px; left: 10px; right: 10px; z-index: 15;
       background: rgba(18, 20, 26, 0.96); border: 1px solid #007aff; color: #fff;
@@ -60,7 +59,6 @@
     #turnDistance { font-size: 16px; font-weight: 800; color: #48bb78; }
     #turnInstruction { font-size: 12px; color: #cbd5e0; line-height: 1.2; }
 
-    /* Lane Guidance Box */
     #laneContainer {
       display: none; align-items: center; justify-content: center; gap: 6px;
       background: #11141a; padding: 6px; border-radius: 6px; border: 1px solid #333;
@@ -71,7 +69,6 @@
     }
     .lane-pill.active { background: #007aff; color: #fff; font-weight: bold; box-shadow: 0 0 6px rgba(0,122,255,0.6); }
 
-    /* Bottom Widgets */
     .bottom-left-stack {
       position: absolute; bottom: 30px; left: 10px; z-index: 15;
       display: flex; gap: 8px; pointer-events: none;
@@ -104,7 +101,6 @@
     <div id="status">Waiting for GPS signal... (No Tolls Active)</div>
   </div>
 
-  <!-- Turn Guidance & Lane Guidance Banner -->
   <div id="guidanceBanner">
     <div class="top-instruction-row">
       <div id="turnIcon">⬆️</div>
@@ -366,8 +362,10 @@
       if (!userPos || !destination) return;
 
       try {
-        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2&instructionsType=text`;
+        // Corrected routing endpoint using lat,lon format expected by TomTom
+        const url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&avoid=tolls&maxAlternatives=2`;
         const res = await fetch(url);
+        if (!res.ok) throw new Error("API response error");
         const data = await res.json();
 
         availableRoutes = data.routes || [];
@@ -443,7 +441,6 @@
       const mins = Math.round(summary.travelTimeInSeconds / 60);
       const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
 
-      // Parse Instructions & Guidance safely
       const instructions = route.guidance?.instructions || [];
       const nextStep = instructions[1] || instructions[0];
 
@@ -454,7 +451,6 @@
         document.getElementById("turnDistance").innerText = formatDistance(distMeters);
         document.getElementById("turnInstruction").innerText = nextStep.message || "Continue ahead";
 
-        // Lane Guidance
         const laneContainer = document.getElementById("laneContainer");
         if (nextStep.lanes && nextStep.lanes.length > 0) {
           laneContainer.style.display = "flex";
