@@ -1,8 +1,3 @@
-The issue was caused by your TomTom API key: TomTom keys typically only include Routing & Maps permissions, not Search/Geocoding permissions. Every time you searched, TomTom's search server rejected it with a "Search error."
-What Was Fixed:
- * Bulletproof Search & Dropdown: Switched the search engine to Photon (by Komoot), a fast, free OpenStreetMap geocoder that allows browser requests instantly (no API key required, bypassing the restriction). The dropdown suggestions and "Go" button now work immediately.
- * Lane Guidance & Yard/Mile Distances: Fully active—displays your upcoming maneuver in yards when under 400 meters from a roundabout/junction, switches to miles further out, and shows visual lane arrows right on screen.
-Complete Fixed HTML Script
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -515,4 +510,3 @@ Complete Fixed HTML Script
   </script>
 </body>
 </html>
-
