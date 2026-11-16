@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>UK Auto-Divert Nav</title>
+  <title>UK Pro Auto-Divert Nav</title>
   <link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css" />
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/services/services-web.min.js"></script>
@@ -11,60 +11,159 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
     body, html { height: 100%; width: 100%; overflow: hidden; background: #111; }
     #map { height: 100%; width: 100%; }
+
+    /* Top Control & Turn-by-Turn Panel */
     #panel {
-      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 10;
-      background: rgba(20, 22, 28, 0.94); color: #fff; padding: 14px;
-      border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+      position: absolute; top: 10px; left: 10px; right: 10px; z-index: 15;
+      background: rgba(18, 20, 26, 0.95); color: #fff; padding: 12px;
+      border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.55);
     }
-    .row { display: flex; gap: 8px; margin-bottom: 6px; position: relative; }
+    #turnBanner {
+      display: none; background: #007aff; padding: 10px 12px; border-radius: 10px;
+      margin-bottom: 10px; font-weight: 700; font-size: 16px; line-height: 1.3;
+    }
+    #turnSub { font-size: 12px; font-weight: 400; opacity: 0.9; margin-top: 2px; }
+
+    .row { display: flex; gap: 6px; margin-bottom: 6px; position: relative; }
     input {
-      flex: 1; padding: 11px; border-radius: 8px; border: 1px solid #333;
-      background: #222630; color: #fff; font-size: 15px;
+      flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #333;
+      background: #222630; color: #fff; font-size: 14px;
     }
     button {
-      padding: 11px 16px; border-radius: 8px; border: none;
-      background: #007aff; color: #fff; font-weight: 600; font-size: 15px;
+      padding: 10px 12px; border-radius: 8px; border: none;
+      background: #007aff; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer;
     }
+    .btn-sec { background: #2d3340; }
+    .btn-danger { background: #e53e3e; }
+
     #suggestions {
-      position: absolute; top: 48px; left: 0; right: 64px; background: #222630;
-      border: 1px solid #333; border-radius: 8px; max-height: 180px; overflow-y: auto;
-      z-index: 20; display: none;
+      position: absolute; top: 44px; left: 0; right: 0; background: #222630;
+      border: 1px solid #444; border-radius: 8px; max-height: 180px; overflow-y: auto;
+      z-index: 30; display: none;
     }
     .suggestion-item {
-      padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
+      padding: 10px 12px; border-bottom: 1px solid #333; font-size: 13px; color: #fff; cursor: pointer;
     }
-    #status { font-size: 13px; color: #a0aec0; line-height: 1.4; margin-top: 6px; }
+
+    /* Waypoints & Route Choices */
+    #waypointsList { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+    .wp-tag {
+      background: #2d3340; font-size: 11px; padding: 4px 8px; border-radius: 6px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #routeChoices { display: none; gap: 6px; margin: 6px 0; overflow-x: auto; }
+    .route-card {
+      flex: 1; min-width: 95px; background: #222630; border: 1px solid #333;
+      padding: 8px; border-radius: 8px; font-size: 12px; text-align: center; cursor: pointer;
+    }
+    .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.2); }
+
+    #status { font-size: 12px; color: #a0aec0; line-height: 1.4; }
     .alert { color: #48bb78 !important; font-weight: 600; }
-    
-    #recenterBtn {
-      position: absolute; bottom: 30px; right: 20px; z-index: 10;
-      background: #007aff; color: #fff; border: none; border-radius: 50px;
-      padding: 12px 18px; font-weight: 600; font-size: 14px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: none;
+
+    /* Bottom Speedometer & Hazard Controls */
+    #bottomHud {
+      position: absolute; bottom: 20px; left: 12px; right: 12px; z-index: 15;
+      display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none;
+    }
+    #speedBox {
+      pointer-events: auto; display: flex; gap: 8px; align-items: center;
+      background: rgba(18, 20, 26, 0.94); padding: 8px 12px; border-radius: 14px;
+      border: 1px solid #333; color: #fff;
+    }
+    #currentSpeed { font-size: 22px; font-weight: 800; line-height: 1; }
+    #speedUnit { font-size: 10px; color: #a0aec0; }
+    #speedLimitSign {
+      width: 38px; height: 38px; border-radius: 50%; background: #fff; color: #111;
+      border: 4px solid #e53e3e; display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 13px;
+    }
+    .speeding { background: #e53e3e !important; color: #fff !important; }
+
+    #actionBtns { pointer-events: auto; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+    .fab {
+      border-radius: 50px; padding: 11px 16px; font-size: 13px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+    }
+    #recenterBtn { display: none; background: #007aff; }
+    #reportBtn { background: #ed8936; color: #111; font-weight: 700; }
+
+    /* Hazard Report Modal */
+    #reportMenu {
+      display: none; position: absolute; bottom: 80px; right: 12px; z-index: 25;
+      background: #1c2029; border: 1px solid #444; border-radius: 12px; padding: 10px;
+      width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    }
+    .report-opt {
+      width: 100%; text-align: left; background: #2d3340; margin-bottom: 6px; padding: 9px 12px;
     }
   </style>
 </head>
 <body>
   <div id="panel">
-    <div class="row">
-      <input id="destInput" type="text" placeholder="Enter destination or postcode..." autocomplete="off" />
-      <div id="suggestions"></div>
-      <button onclick="startDirectRoute()">Go</button>
+    <div id="turnBanner">
+      <div id="turnText">Proceed on route</div>
+      <div id="turnSub">Calculating distance...</div>
     </div>
-    <div id="status">Waiting for GPS signal...</div>
+
+    <div class="row">
+      <input id="destInput" type="text" placeholder="Destination, postcode, or pit stop..." autocomplete="off" />
+      <div id="suggestions"></div>
+      <button class="btn-sec" onclick="addStopMode()" title="Add multi-stop waypoint">+Stop</button>
+      <button onclick="handleGo()">Go</button>
+    </div>
+
+    <div id="waypointsList"></div>
+    <div id="routeChoices"></div>
+
+    <div class="row" style="margin-bottom:0; justify-content: space-between; align-items: center;">
+      <div id="status">Waiting for GPS signal...</div>
+      <div style="display:flex; gap:4px;">
+        <button class="btn-sec" style="padding:4px 8px; font-size:11px;" onclick="saveFavorite()">★ Save</button>
+        <button class="btn-sec" style="padding:4px 8px; font-size:11px;" onclick="loadFavorite()">★ Favs</button>
+        <button id="stopNavBtn" class="btn-danger" style="padding:4px 8px; font-size:11px; display:none;" onclick="stopNavigation()">End</button>
+      </div>
+    </div>
   </div>
-  
+
   <div id="map"></div>
-  <button id="recenterBtn" onclick="recenterMap()">Recenter</button>
+
+  <div id="reportMenu">
+    <button class="report-opt" onclick="dropHazard('🚓 Speed Camera')">🚓 Speed Camera</button>
+    <button class="report-opt" onclick="dropHazard('⚠️ Crash / Hazard')">⚠️ Crash / Hazard</button>
+    <button class="report-opt" onclick="dropHazard('🚧 Road Closure')">🚧 Road Closure</button>
+    <button class="report-opt btn-danger" style="margin-bottom:0;" onclick="toggleReportMenu()">Cancel</button>
+  </div>
+
+  <div id="bottomHud">
+    <div id="speedBox">
+      <div>
+        <div id="currentSpeed">0</div>
+        <div id="speedUnit">MPH</div>
+      </div>
+      <div id="speedLimitSign">--</div>
+    </div>
+
+    <div id="actionBtns">
+      <button id="recenterBtn" class="fab" onclick="recenterMap()">Recenter</button>
+      <button id="reportBtn" class="fab" onclick="toggleReportMenu()">+ Report</button>
+    </div>
+  </div>
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
     let userPos = [-1.467, 52.523];
     let prevPos = null;
-    let destPos = null;
+    let waypoints = []; // Array of { name, coords: [lng, lat] }
+    let availableRoutes = [];
+    let selectedRouteIndex = 0;
     let isNavigating = false;
     let isFollowing = true;
+    let isAddingStop = false;
     let rerouteTimer = null;
+    let lastSpokenInstruction = "";
+    let currentSpeedLimitMph = null;
+    let wakeLock = null;
 
     const map = tt.map({
       key: API_KEY,
@@ -76,6 +175,15 @@
     });
 
     const userMarker = new tt.Marker({ color: "#007aff" }).setLngLat(userPos).addTo(map);
+
+    // Keep screen awake during navigation
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (e) {}
+    }
 
     map.on('dragstart', () => {
       if (isNavigating) {
@@ -91,6 +199,8 @@
     }
 
     function speak(text) {
+      if (!text || text === lastSpokenInstruction) return;
+      lastSpokenInstruction = text;
       if ("speechSynthesis" in window) {
         window.speechSynthesis.cancel();
         const msg = new SpeechSynthesisUtterance(text);
@@ -105,18 +215,28 @@
       lat2 = lat2 * Math.PI / 180;
       const y = Math.sin(dLon) * Math.cos(lat2);
       const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-      let brng = Math.atan2(y, x) * 180 / Math.PI;
-      return (brng + 360) % 360;
+      return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
     }
 
+    // Live GPS, Speedometer & Auto-Rotation
     navigator.geolocation.watchPosition(
       (pos) => {
         const newLng = pos.coords.longitude;
         const newLat = pos.coords.latitude;
-        
+        const speedMps = pos.coords.speed || 0;
+        const mph = Math.round(speedMps * 2.23694);
+
+        const speedEl = document.getElementById("currentSpeed");
+        speedEl.innerText = mph;
+        if (currentSpeedLimitMph && mph > currentSpeedLimitMph + 2) {
+          speedEl.parentElement.parentElement.classList.add("speeding");
+        } else {
+          speedEl.parentElement.parentElement.classList.remove("speeding");
+        }
+
         if (prevPos) {
           const bearing = calculateBearing(prevPos[1], prevPos[0], newLat, newLng);
-          if (isNavigating && isFollowing && !isNaN(bearing)) {
+          if (isNavigating && isFollowing && !isNaN(bearing) && mph > 2) {
             map.setBearing(bearing);
           }
         }
@@ -126,18 +246,17 @@
         userMarker.setLngLat(userPos);
 
         if (isNavigating) {
-          if (isFollowing) {
-            map.setCenter(userPos);[span_0](start_span)[span_0](end_span)
-          }
+          if (isFollowing) map.setCenter(userPos);
         } else {
           map.setCenter(userPos);
           document.getElementById("status").innerText = "GPS locked. Ready.";
         }
       },
-      (err) => { document.getElementById("status").innerText = "GPS signal lost."; },
+      () => { document.getElementById("status").innerText = "GPS signal lost."; },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
     );
 
+    // Search & Autocomplete
     const destInput = document.getElementById("destInput");
     const suggestionsBox = document.getElementById("suggestions");
 
@@ -147,57 +266,96 @@
         suggestionsBox.style.display = "none";
         return;
       }
-
       try {
         const res = await tt.services.fuzzySearch({
-          key: API_KEY,
-          query: query,
-          countrySet: "GB",
-          limit: 5
+          key: API_KEY, query, countrySet: "GB", lat: userPos[1], lon: userPos[0], limit: 5
         });
-
         if (res.results && res.results.length > 0) {
           suggestionsBox.innerHTML = "";
           res.results.forEach(item => {
             const div = document.createElement("div");
             div.className = "suggestion-item";
-            div.innerText = item.poi ? `${item.poi.name}, ${item.address.freeformAddress}` : item.address.freeformAddress;
-            
-            const chooseDest = (evt) => {
+            const label = item.poi ? `${item.poi.name}, ${item.address.freeformAddress}` : item.address.freeformAddress;
+            div.innerText = label;
+            const choose = (evt) => {
               evt.preventDefault();
               destInput.blur();
-              destPos = [item.position.lng, item.position.lat];
-              destInput.value = div.innerText;
               suggestionsBox.style.display = "none";
-              startLiveNavigation();
+              if (isAddingStop) {
+                waypoints.unshift({ name: label.split(",")[0], coords: [item.position.lng, item.position.lat] });
+                isAddingStop = false;
+                destInput.placeholder = "Destination, postcode, or pit stop...";
+                destInput.value = "";
+                renderWaypoints();
+                if (isNavigating) calculateAndDrawRoutes(false);
+              } else {
+                waypoints = [{ name: label, coords: [item.position.lng, item.position.lat] }];
+                destInput.value = label;
+                renderWaypoints();
+                startLiveNavigation();
+              }
             };
-
-            div.addEventListener("click", chooseDest);
-            div.addEventListener("touchend", chooseDest);
+            div.addEventListener("click", choose);
             suggestionsBox.appendChild(div);
           });
           suggestionsBox.style.display = "block";
         }
-      } catch (err) {
-        console.error(err);
-      }
+      } catch (err) {}
     });
 
-    async function startDirectRoute() {
+    function addStopMode() {
+      isAddingStop = true;
+      destInput.value = "";
+      destInput.placeholder = "Search pit stop (fuel, coffee, pickup)...";
+      destInput.focus();
+    }
+
+    function renderWaypoints() {
+      const box = document.getElementById("waypointsList");
+      box.innerHTML = "";
+      waypoints.forEach((wp, idx) => {
+        const tag = document.createElement("div");
+        tag.className = "wp-tag";
+        tag.innerHTML = `<span>${idx + 1}. ${wp.name.substring(0, 22)}</span> <b style="cursor:pointer;" onclick="removeWaypoint(${idx})">✕</b>`;
+        box.appendChild(tag);
+      });
+    }
+
+    function removeWaypoint(idx) {
+      waypoints.splice(idx, 1);
+      renderWaypoints();
+      if (waypoints.length > 0 && isNavigating) calculateAndDrawRoutes(false);
+      else if (waypoints.length === 0) stopNavigation();
+    }
+
+    async function handleGo() {
       destInput.blur();
       suggestionsBox.style.display = "none";
       const query = destInput.value.trim();
+      if (!query && waypoints.length > 0) {
+        startLiveNavigation();
+        return;
+      }
       if (!query) return;
 
-      document.getElementById("status").innerText = "Finding destination...";
+      document.getElementById("status").innerText = "Finding location...";
       try {
-        const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query: query, countrySet: "GB" });
+        const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query, countrySet: "GB" });
         if (!geoRes.results || geoRes.results.length === 0) {
-          document.getElementById("status").innerText = "Destination not found.";
+          document.getElementById("status").innerText = "Location not found.";
           return;
         }
-
-        destPos = [geoRes.results[0].position.lng, geoRes.results[0].position.lat];
+        const top = geoRes.results[0];
+        const label = top.poi ? top.poi.name : top.address.freeformAddress;
+        if (isAddingStop) {
+          waypoints.unshift({ name: label, coords: [top.position.lng, top.position.lat] });
+          isAddingStop = false;
+          destInput.value = "";
+          renderWaypoints();
+        } else {
+          waypoints = [{ name: label, coords: [top.position.lng, top.position.lat] }];
+          renderWaypoints();
+        }
         startLiveNavigation();
       } catch (err) {
         document.getElementById("status").innerText = "Search error.";
@@ -205,58 +363,166 @@
     }
 
     async function startLiveNavigation() {
+      if (waypoints.length === 0) return;
       isNavigating = true;
       isFollowing = true;
-      await calculateAndDrawRoute(true);
+      selectedRouteIndex = 0;
+      document.getElementById("stopNavBtn").style.display = "inline-block";
+      document.getElementById("turnBanner").style.display = "block";
+      requestWakeLock();
 
+      await calculateAndDrawRoutes(true);
       if (rerouteTimer) clearInterval(rerouteTimer);
-      rerouteTimer = setInterval(() => calculateAndDrawRoute(false), 30000);
+      rerouteTimer = setInterval(() => calculateAndDrawRoutes(false), 20000); // Reroute check every 20s
     }
 
-    async function calculateAndDrawRoute(isInitial) {
-      if (!userPos || !destPos) return;
+    function stopNavigation() {
+      isNavigating = false;
+      waypoints = [];
+      renderWaypoints();
+      if (rerouteTimer) clearInterval(rerouteTimer);
+      document.getElementById("turnBanner").style.display = "none";
+      document.getElementById("routeChoices").style.display = "none";
+      document.getElementById("stopNavBtn").style.display = "none";
+      document.getElementById("status").innerText = "Navigation ended.";
+      if (map.getLayer("route")) { map.removeLayer("route"); map.removeSource("route"); }
+    }
 
-      document.getElementById("status").innerText = "Calculating route & traffic...";
+    async function calculateAndDrawRoutes(isInitial) {
+      if (!userPos || waypoints.length === 0) return;
+
+      const coordsChain = [userPos, ...waypoints.map(w => w.coords)]
+        .map(c => `${c[0]},${c[1]}`).join(":");
+
       try {
         const routeRes = await tt.services.calculateRoute({
           key: API_KEY,
-          locations: `${userPos[0]},${userPos[1]}:${destPos[0]},${destPos[1]}`,
+          locations: coordsChain,
           traffic: true,
-          routeType: "fastest"
+          routeType: "fastest",
+          maxAlternatives: waypoints.length === 1 ? 2 : 0,
+          instructionsType: "text",
+          sectionType: "speedLimit"
         });
 
-        const geojson = routeRes.toGeoJson();
-        
-        if (map.getLayer("route")) {
-          map.removeLayer("route");
-          map.removeSource("route");
-        }
+        availableRoutes = routeRes.routes || [];
+        if (availableRoutes.length === 0) return;
+        if (selectedRouteIndex >= availableRoutes.length) selectedRouteIndex = 0;
 
-        map.addLayer({
-          id: "route",
-          type: "line",
-          source: { type: "geojson", data: geojson },
-          paint: { "line-color": "#007aff", "line-width": 8 }
-        });
-
-        const route = routeRes.routes[0];
-        const summary = route.summary;
-        const mins = Math.round(summary.travelTimeInSeconds / 60);
-        const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
-
-        document.getElementById("status").className = delayMins > 5 ? "alert" : "";
-        document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay)`;
-
-        if (isInitial) {
-          speak(`Navigation started. Estimated time ${mins} minutes.`);
-        }
-
-        if (isFollowing) {
-          map.setCenter(userPos);[span_1](start_span)[span_1](end_span)
-        }
+        renderRouteChoices();
+        drawSelectedRoute(routeRes, isInitial);
       } catch (err) {
-        console.error("Routing error:", err);
-        document.getElementById("status").innerText = "Navigation update failed.";
+        console.error(err);
+        document.getElementById("status").innerText = "Checking traffic connection...";
+      }
+    }
+
+    function renderRouteChoices() {
+      const container = document.getElementById("routeChoices");
+      if (availableRoutes.length <= 1) {
+        container.style.display = "none";
+        return;
+      }
+      container.style.display = "flex";
+      container.innerHTML = "";
+      availableRoutes.forEach((r, idx) => {
+        const mins = Math.round(r.summary.travelTimeInSeconds / 60);
+        const miles = (r.summary.lengthInMeters * 0.000621371).toFixed(1);
+        const card = document.createElement("div");
+        card.className = `route-card ${idx === selectedRouteIndex ? "active" : ""}`;
+        card.innerHTML = `<b>${mins} min</b><br><span style="color:#a0aec0;">${miles} mi</span>`;
+        card.onclick = () => {
+          selectedRouteIndex = idx;
+          calculateAndDrawRoutes(true);
+        };
+        container.appendChild(card);
+      });
+    }
+
+    function drawSelectedRoute(routeRes, isInitial) {
+      const geojson = routeRes.toGeoJson();
+      const chosenFeature = geojson.features[selectedRouteIndex] || geojson.features[0];
+
+      if (map.getLayer("route")) {
+        map.removeLayer("route");
+        map.removeSource("route");
+      }
+
+      map.addLayer({
+        id: "route",
+        type: "line",
+        source: { type: "geojson", data: chosenFeature },
+        paint: { "line-color": "#007aff", "line-width": 8 }
+      });
+
+      const route = availableRoutes[selectedRouteIndex];
+      const summary = route.summary;
+      const mins = Math.round(summary.travelTimeInSeconds / 60);
+      const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
+
+      // Extract Speed Limit if available
+      const speedSec = route.sections?.find(s => s.sectionType === "speedLimit");
+      if (speedSec && speedSec.maxSpeedLimitInKmh) {
+        currentSpeedLimitMph = Math.round(speedSec.maxSpeedLimitInKmh * 0.621371);
+        document.getElementById("speedLimitSign").innerText = currentSpeedLimitMph;
+      }
+
+      // Extract Step-by-Step Turn Guidance
+      const instructions = route.guidance?.instructions || [];
+      const nextStep = instructions[1] || instructions[0];
+      if (nextStep && nextStep.message) {
+        const distMeters = nextStep.routeOffsetInMeters || 0;
+        const distYards = Math.round(distMeters * 1.09361);
+        const distLabel = distYards > 400 ? `${(distMeters * 0.000621371).toFixed(1)} miles` : `${distYards} yards`;
+
+        document.getElementById("turnText").innerText = nextStep.message;
+        document.getElementById("turnSub").innerText = `In ${distLabel}`;
+
+        if (isInitial || distYards < 300) {
+          speak(`In ${distLabel}, ${nextStep.message}`);
+        }
+      }
+
+      document.getElementById("status").className = delayMins > 4 ? "alert" : "";
+      document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m delay) • Auto-reroute active`;
+      if (isFollowing) map.setCenter(userPos);
+    }
+
+    // Crowd-Sourced Hazard Reporting
+    function toggleReportMenu() {
+      const m = document.getElementById("reportMenu");
+      m.style.display = m.style.display === "block" ? "none" : "block";
+    }
+
+    function dropHazard(label) {
+      toggleReportMenu();
+      const el = document.createElement("div");
+      el.style.cssText = "background:#111; color:#fff; padding:4px 8px; border-radius:8px; border:2px solid #ed8936; font-size:12px; font-weight:700;";
+      el.innerText = label;
+      new tt.Marker({ element: el }).setLngLat(userPos).addTo(map);
+      speak(`${label.replace(/[^a-zA-Z ]/g, "")} reported on map.`);
+    }
+
+    // Saved Favorites (Local Storage)
+    function saveFavorite() {
+      if (waypoints.length === 0) return alert("Set a destination first to save it.");
+      const favs = JSON.parse(localStorage.getItem("ukNavFavs") || "[]");
+      favs.push(waypoints[waypoints.length - 1]);
+      localStorage.setItem("ukNavFavs", JSON.stringify(favs));
+      alert("Saved to Favorites!");
+    }
+
+    function loadFavorite() {
+      const favs = JSON.parse(localStorage.getItem("ukNavFavs") || "[]");
+      if (favs.length === 0) return alert("No saved favorites yet.");
+      const list = favs.map((f, i) => `${i + 1}: ${f.name}`).join("\n");
+      const pick = prompt(`Enter number to route:\n${list}`);
+      const idx = parseInt(pick) - 1;
+      if (favs[idx]) {
+        waypoints = [favs[idx]];
+        destInput.value = favs[idx].name;
+        renderWaypoints();
+        startLiveNavigation();
       }
     }
   </script>
