@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>UK Auto-Divert Nav</title>
+  <title>UK Navigation</title>
   <link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css" />
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
   <style>
@@ -39,32 +39,14 @@
     }
     .suggestion-item:active { background: #007aff; }
 
-    /* Route Option Cards */
-    #routeChoices { display: none; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
-    .route-card {
-      flex: 1; min-width: 90px; background: #222630; border: 2px solid #444;
-      padding: 8px; border-radius: 8px; font-size: 12px; text-align: center; cursor: pointer; color: #fff;
-    }
-    .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.25); }
-
     #guidanceBox {
       display: none; background: rgba(0, 122, 255, 0.22); border: 1px solid #007aff;
       border-radius: 10px; padding: 12px; margin-bottom: 8px;
     }
     #instructionText { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
     #distanceText { font-size: 15px; color: #61dafb; font-weight: 800; }
-    
-    #laneBanner {
-      display: none; gap: 6px; margin-top: 8px; align-items: center;
-      overflow-x: auto; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.15);
-    }
-    .lane-icon {
-      background: #333; color: #888; padding: 6px 10px; border-radius: 6px; font-size: 16px; font-weight: bold;
-    }
-    .lane-icon.active { background: #48bb78; color: #fff; }
 
     #status { font-size: 13px; color: #a0aec0; }
-    .alert { color: #48bb78 !important; font-weight: 600; }
 
     #speedBox {
       position: absolute; bottom: 30px; left: 12px; z-index: 50;
@@ -92,12 +74,9 @@
       <button type="button" id="stopNavBtn" class="btn-danger" style="display:none;" onclick="stopNavigation()">End</button>
     </div>
 
-    <div id="routeChoices"></div>
-
     <div id="guidanceBox">
       <div id="instructionText">Calculating route...</div>
       <div id="distanceText">--</div>
-      <div id="laneBanner"></div>
     </div>
 
     <div id="status">Waiting for GPS signal...</div>
@@ -119,14 +98,11 @@
     let destination = null;
     let isNavigating = false;
     let isFollowing = true;
-    let rerouteTimer = null;
     let searchTimeout = null;
     let lastSpoken = "";
     let wakeLock = null;
-    let availableRoutes = [];
-    let selectedRouteIndex = 0;
-    let currentInstructions = [];
-    let currentInstructionIndex = 0;
+    let routeSteps = [];
+    let currentStepIndex = 0;
 
     async function requestWakeLock() {
       try {
@@ -139,8 +115,7 @@
       container: "map",
       center: userPos,
       zoom: 16,
-      pitch: 50,
-      stylesVisibility: { trafficFlow: true, trafficIncidents: true }
+      pitch: 50
     });
 
     const userMarker = new tt.Marker({ color: "#007aff" }).setLngLat(userPos).addTo(map);
@@ -175,7 +150,7 @@
       }
     }
 
-    // GPS Tracking
+    // Live GPS
     navigator.geolocation.watchPosition(
       (pos) => {
         const newLng = pos.coords.longitude;
@@ -203,7 +178,7 @@
 
         if (isNavigating) {
           if (isFollowing) map.setCenter(userPos);
-          updateGuidanceProgress(newLat, newLng);
+          updateNavigationProgress(newLat, newLng);
         } else {
           map.setCenter(userPos);
           document.getElementById("status").innerText = "GPS locked. Ready.";
@@ -213,34 +188,19 @@
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
     );
 
-    // Multi-Engine Search
+    // Search using Photon Komoot
     async function fetchPlaces(query) {
       try {
-        const res = await fetch(`https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${API_KEY}&countrySet=GB&limit=5`);
+        const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lat=${userPos[1]}&lon=${userPos[0]}`);
         const data = await res.json();
-        if (data.results && data.results.length > 0) {
-          return data.results.map(item => {
-            const name = item.poi ? item.poi.name : item.address.freeformAddress;
-            return {
-              label: name + (item.address.freeformAddress && !name.includes(item.address.freeformAddress) ? `, ${item.address.freeformAddress}` : ''),
-              coords: [item.position.lon, item.position.lat]
-            };
-          });
-        }
-      } catch (e) {}
-
-      try {
-        const res2 = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lat=${userPos[1]}&lon=${userPos[0]}`);
-        const data2 = await res2.json();
-        if (data2.features && data2.features.length > 0) {
-          return data2.features.map(item => {
+        if (data.features && data.features.length > 0) {
+          return data.features.map(item => {
             const p = item.properties;
             const label = [p.name, p.street, p.city, p.postcode].filter(Boolean).join(", ");
             return { label: label || query, coords: item.geometry.coordinates };
           });
         }
       } catch (e) {}
-
       return [];
     }
 
@@ -269,7 +229,6 @@
               destInput.blur();
               suggestionsBox.style.display = "none";
               destination = { name: item.label, coords: item.coords };
-              selectedRouteIndex = 0;
               startNavigation();
             };
             suggestionsBox.appendChild(div);
@@ -290,12 +249,11 @@
       document.getElementById("status").innerText = "Searching destination...";
       const results = await fetchPlaces(q);
       if (results.length === 0) {
-        document.getElementById("status").innerText = "Destination not found. Try postcode.";
+        document.getElementById("status").innerText = "Destination not found.";
         return;
       }
       destination = { name: results[0].label, coords: results[0].coords };
       destInput.value = results[0].label;
-      selectedRouteIndex = 0;
       startNavigation();
     }
 
@@ -307,143 +265,93 @@
       document.getElementById("stopNavBtn").style.display = "inline-block";
       await requestWakeLock();
 
-      await calculateAndDrawRoute(true);
+      try {
+        // Using OSRM Public Routing Engine (100% reliable browser access)
+        const url = `https://router.project-osrm.org/route/v1/driving/${userPos[0]},${userPos[1]};${destination.coords[0]},${destination.coords[1]}?overview=full&geometries=geojson&steps=true`;
+        const res = await fetch(url);
+        const data = await res.json();
 
-      // Live 30-second traffic update loop
-      if (rerouteTimer) clearInterval(rerouteTimer);
-      rerouteTimer = setInterval(() => {
-        if (isNavigating && destination) {
-          calculateAndDrawRoute(false);
+        if (!data.routes || data.routes.length === 0) {
+          document.getElementById("status").innerText = "Route calculation failed.";
+          return;
         }
-      }, 30000);
+
+        const route = data.routes[0];
+        const coords = route.geometry.coordinates; // [lon, lat]
+
+        if (map.getLayer("route")) {
+          map.removeLayer("route");
+          map.removeSource("route");
+        }
+        map.addLayer({
+          id: "route",
+          type: "line",
+          source: { type: "geojson", data: { type: "Feature", geometry: { type: "LineString", coordinates: coords } } },
+          paint: { "line-color": "#007aff", "line-width": 8 }
+        });
+
+        // Extract turn steps
+        routeSteps = [];
+        route.legs.forEach(leg => {
+          leg.steps.forEach(step => {
+            routeSteps.push({
+              instruction: step.maneuver.instruction || step.name || "Continue",
+              location: step.maneuver.location // [lon, lat]
+            });
+          });
+        });
+        currentStepIndex = 0;
+
+        const mins = Math.round(route.duration / 60);
+        const miles = (route.distance * 0.000621371).toFixed(1);
+
+        document.getElementById("status").innerText = `ETA: ${mins} min (${miles} mi)`;
+        document.getElementById("guidanceBox").style.display = "block";
+        speak(`Navigation started. Estimated time ${mins} minutes.`);
+        if (isFollowing) map.setCenter(userPos);
+
+      } catch (err) {
+        document.getElementById("status").innerText = "Routing error.";
+      }
     }
 
     function stopNavigation() {
       isNavigating = false;
       destination = null;
-      if (rerouteTimer) clearInterval(rerouteTimer);
       if (wakeLock) { wakeLock.release(); wakeLock = null; }
       document.getElementById("stopNavBtn").style.display = "none";
-      document.getElementById("routeChoices").style.display = "none";
-      document.getElementById("routeChoices").innerHTML = "";
       document.getElementById("guidanceBox").style.display = "none";
       document.getElementById("destInput").value = "";
-      document.getElementById("status").className = "";
       document.getElementById("status").innerText = "Navigation ended.";
       if (map.getLayer("route")) { map.removeLayer("route"); map.removeSource("route"); }
     }
 
-    async function calculateAndDrawRoute(isInitial) {
-      if (!userPos || !destination) return;
-      try {
-        let url = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&maxAlternatives=2&guidance=true&travelMode=car`;
-        let res = await fetch(url);
-        let data = await res.json();
-        
-        availableRoutes = data.routes || [];
-
-        // Fallback if maxAlternatives=2 fails
-        if (availableRoutes.length === 0) {
-          const fallbackUrl = `https://api.tomtom.com/routing/1/calculateRoute/${userPos[1]},${userPos[0]}:${destination.coords[1]},${destination.coords[0]}/json?key=${API_KEY}&traffic=true&routeType=fastest&guidance=true&travelMode=car`;
-          const res2 = await fetch(fallbackUrl);
-          const data2 = await res2.json();
-          availableRoutes = data2.routes || [];
-        }
-
-        if (availableRoutes.length === 0) {
-          document.getElementById("status").innerText = "Could not calculate route.";
-          return;
-        }
-
-        if (selectedRouteIndex >= availableRoutes.length) selectedRouteIndex = 0;
-
-        renderRouteChoices();
-        drawActiveRoute(isInitial);
-      } catch (err) {
-        document.getElementById("status").innerText = "Traffic connection error. Retrying in 30s...";
-      }
-    }
-
-    function renderRouteChoices() {
-      const container = document.getElementById("routeChoices");
-      if (availableRoutes.length <= 1) {
-        container.style.display = "none";
-        return;
-      }
-      container.style.display = "flex";
-      container.innerHTML = "";
-
-      const baseSecs = availableRoutes[0].summary.travelTimeInSeconds;
-
-      availableRoutes.forEach((r, idx) => {
-        const mins = Math.round(r.summary.travelTimeInSeconds / 60);
-        const miles = (r.summary.lengthInMeters * 0.000621371).toFixed(1);
-        
-        let diffText = "Fastest";
-        if (idx > 0) {
-          const diffMins = Math.round((r.summary.travelTimeInSeconds - baseSecs) / 60);
-          diffText = diffMins === 0 ? "Same time" : (diffMins > 0 ? `+${diffMins} mins` : `${diffMins} mins`);
-        }
-
-        const card = document.createElement("div");
-        card.className = `route-card ${idx === selectedRouteIndex ? "active" : ""}`;
-        card.innerHTML = `<b>Option ${idx + 1}</b><br>${mins} min (${miles} mi)<br><span style="color:#48bb78; font-size:11px;">${diffText}</span>`;
-        card.onpointerdown = (evt) => {
-          evt.preventDefault();
-          selectedRouteIndex = idx;
-          renderRouteChoices();
-          drawActiveRoute(false);
-          speak(`Switched to route option ${idx + 1}`);
-        };
-        container.appendChild(card);
-      });
-    }
-
-    function drawActiveRoute(isInitial) {
-      const route = availableRoutes[selectedRouteIndex];
-      const coords = route.legs.flatMap(l => l.points.map(p => [p.longitude, p.latitude]));
-
-      if (map.getLayer("route")) {
-        map.removeLayer("route");
-        map.removeSource("route");
-      }
-      map.addLayer({
-        id: "route",
-        type: "line",
-        source: { type: "geojson", data: { type: "Feature", geometry: { type: "LineString", coordinates: coords } } },
-        paint: { "line-color": "#007aff", "line-width": 8 }
-      });
-
-      currentInstructions = route.guidance?.instructions || [];
-      currentInstructionIndex = 0;
-      updateGuidanceDisplay();
-
-      const mins = Math.round(route.summary.travelTimeInSeconds / 60);
-      const delayMins = Math.round((route.summary.trafficDelayInSeconds || 0) / 60);
-
-      document.getElementById("status").className = delayMins > 5 ? "alert" : "";
-      document.getElementById("status").innerText = `ETA: ${mins} min (Live Traffic Active)`;
-
-      if (isInitial) {
-        speak(`Navigation started. Estimated time ${mins} minutes.`);
-        if (isFollowing) map.setCenter(userPos);
-      }
-    }
-
-    function updateGuidanceProgress(lat, lon) {
-      if (!currentInstructions.length) return;
-      const step = currentInstructions[currentInstructionIndex];
+    function updateNavigationProgress(lat, lon) {
+      if (!routeSteps.length) return;
+      const step = routeSteps[currentStepIndex];
       if (!step) return;
 
-      let distMeters = 100;
-      if (step.point) {
-        const R = 6371000;
-        const dLat = (step.point.latitude - lat) * Math.PI / 180;
-        const dLon = (step.point.longitude - lon) * Math.PI / 180;
-        const a = Math.sin(dLat/2)**2 + Math.cos(lat * Math.PI / 180) * Math.cos(step.point.latitude * Math.PI / 180) * Math.sin(dLon/2)**2;
-        distMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      } else if (step.routeOffsetInMeters) {
-        distMeters = step.routeOffsetInMeters;
+      const targetLat = step.location[1];
+      const targetLon = step.location[0];
+
+      const R = 6371000;
+      const dLat = (targetLat - lat) * Math.PI / 180;
+      const dLon = (targetLon - lon) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat * Math.PI / 180) * Math.cos(targetLat * Math.PI / 180) * Math.sin(dLon/2)**2;
+      const distMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+      if (distMeters < 20 && currentStepIndex < routeSteps.length - 1) {
+        currentStepIndex++;
+        return;
       }
 
-      if (distMeters < 20 && currentInstructionIndex < currentInstructions.length -
+      document.getElementById("distanceText").innerText = formatDistance(distMeters);
+      document.getElementById("instructionText").innerText = step.instruction;
+
+      if (distMeters <= 200 && distMeters > 140) {
+        speak(step.instruction);
+      }
+    }
+  </script>
+</body>
+</html>
