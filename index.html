@@ -6,6 +6,7 @@
   <title>UK Auto-Divert Nav</title>
   <link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css" />
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
+  <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/services/services-web.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
     body, html { height: 100%; width: 100%; overflow: hidden; background: #111; }
@@ -13,25 +14,18 @@
 
     #panel {
       position: absolute; top: 12px; left: 12px; right: 12px; z-index: 15;
-      background: rgba(20, 22, 28, 0.95); color: #fff; padding: 12px;
-      border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+      background: rgba(18, 20, 26, 0.95); color: #fff; padding: 12px;
+      border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     }
-    #turnBanner {
-      display: none; background: #007aff; padding: 10px 12px; border-radius: 10px;
-      margin-bottom: 10px; font-weight: 700; font-size: 16px; line-height: 1.3;
-    }
-    #turnSub { font-size: 13px; font-weight: 500; opacity: 0.92; margin-top: 2px; }
-
-    .row { display: flex; gap: 6px; margin-bottom: 6px; position: relative; }
+    .row { display: flex; gap: 8px; margin-bottom: 8px; position: relative; }
     input {
       flex: 1; padding: 11px; border-radius: 8px; border: 1px solid #333;
       background: #222630; color: #fff; font-size: 15px;
     }
     button {
-      padding: 11px 14px; border-radius: 8px; border: none;
+      padding: 11px 16px; border-radius: 8px; border: none;
       background: #007aff; color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
     }
-    .btn-sec { background: #2d3340; }
     .btn-danger { background: #e53e3e; }
 
     #suggestions {
@@ -43,89 +37,39 @@
       padding: 10px 12px; border-bottom: 1px solid #333; font-size: 14px; color: #fff; cursor: pointer;
     }
 
-    #waypointsList { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
-    .wp-tag {
-      background: #2d3340; font-size: 12px; padding: 4px 8px; border-radius: 6px;
-      display: flex; align-items: center; gap: 6px;
-    }
-    #routeChoices { display: none; gap: 6px; margin: 6px 0; overflow-x: auto; }
-    .route-card {
-      flex: 1; min-width: 95px; background: #222630; border: 1px solid #333;
-      padding: 8px; border-radius: 8px; font-size: 12px; text-align: center; cursor: pointer;
-    }
-    .route-card.active { border-color: #007aff; background: rgba(0, 122, 255, 0.22); }
-
-    #status { font-size: 12px; color: #a0aec0; line-height: 1.4; }
+    #status { font-size: 13px; color: #a0aec0; }
     .alert { color: #48bb78 !important; font-weight: 600; }
 
-    #bottomHud {
-      position: absolute; bottom: 24px; left: 12px; right: 12px; z-index: 15;
-      display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none;
-    }
-    #speedBox {
-      pointer-events: auto; background: rgba(20, 22, 28, 0.94); padding: 10px 14px;
-      border-radius: 14px; border: 1px solid #333; color: #fff; text-align: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    }
-    #currentSpeed { font-size: 24px; font-weight: 800; line-height: 1; }
-    #speedUnit { font-size: 10px; color: #a0aec0; margin-top: 2px; font-weight: 600; }
-
     #recenterBtn {
-      pointer-events: auto; display: none; background: #007aff; color: #fff;
-      border: none; border-radius: 50px; padding: 12px 18px; font-weight: 600;
-      font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+      position: absolute; bottom: 30px; right: 12px; z-index: 15;
+      display: none; background: #007aff; color: #fff; border: none;
+      border-radius: 50px; padding: 12px 18px; font-weight: 600; font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     }
   </style>
 </head>
 <body>
   <div id="panel">
-    <div id="turnBanner">
-      <div id="turnText">Follow route</div>
-      <div id="turnSub">Calculating distance...</div>
-    </div>
-
     <div class="row">
       <input id="destInput" type="text" placeholder="Enter destination or postcode..." autocomplete="off" />
       <div id="suggestions"></div>
-      <button class="btn-sec" onclick="addStopMode()" title="Add a stop">+Stop</button>
       <button onclick="handleGo()">Go</button>
+      <button id="stopNavBtn" class="btn-danger" style="display:none;" onclick="stopNavigation()">End</button>
     </div>
-
-    <div id="waypointsList"></div>
-    <div id="routeChoices"></div>
-
-    <div class="row" style="margin-bottom:0; justify-content: space-between; align-items: center;">
-      <div id="status">Waiting for GPS signal...</div>
-      <div style="display:flex; gap:5px;">
-        <button class="btn-sec" style="padding:5px 9px; font-size:12px;" onclick="saveFavorite()">★ Save</button>
-        <button class="btn-sec" style="padding:5px 9px; font-size:12px;" onclick="loadFavorite()">★ Favs</button>
-        <button id="stopNavBtn" class="btn-danger" style="padding:5px 9px; font-size:12px; display:none;" onclick="stopNavigation()">End</button>
-      </div>
-    </div>
+    <div id="status">Waiting for GPS signal...</div>
   </div>
 
   <div id="map"></div>
-
-  <div id="bottomHud">
-    <div id="speedBox">
-      <div id="currentSpeed">0</div>
-      <div id="speedUnit">MPH</div>
-    </div>
-    <button id="recenterBtn" onclick="recenterMap()">Recenter</button>
-  </div>
+  <button id="recenterBtn" onclick="recenterMap()">Recenter</button>
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
-    let userPos = [-1.467, 52.523]; // [lng, lat]
+    let userPos = [-1.467, 52.523];
     let prevPos = null;
-    let waypoints = [];
-    let availableRoutes = [];
-    let selectedRouteIndex = 0;
+    let destination = null;
     let isNavigating = false;
     let isFollowing = true;
-    let isAddingStop = false;
     let rerouteTimer = null;
-    let lastSpokenInstruction = "";
 
     const map = tt.map({
       key: API_KEY,
@@ -138,12 +82,6 @@
 
     const userMarker = new tt.Marker({ color: "#007aff" }).setLngLat(userPos).addTo(map);
 
-    async function requestWakeLock() {
-      try {
-        if ('wakeLock' in navigator) await navigator.wakeLock.request('screen');
-      } catch (e) {}
-    }
-
     map.on('dragstart', () => {
       if (isNavigating) {
         isFollowing = false;
@@ -155,17 +93,6 @@
       isFollowing = true;
       document.getElementById("recenterBtn").style.display = "none";
       map.setCenter(userPos);
-    }
-
-    function speak(text) {
-      if (!text || text === lastSpokenInstruction) return;
-      lastSpokenInstruction = text;
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const msg = new SpeechSynthesisUtterance(text);
-        msg.lang = "en-GB";
-        window.speechSynthesis.speak(msg);
-      }
     }
 
     function calculateBearing(lat1, lon1, lat2, lon2) {
@@ -181,8 +108,8 @@
       (pos) => {
         const newLng = pos.coords.longitude;
         const newLat = pos.coords.latitude;
-        const mph = Math.round((pos.coords.speed || 0) * 2.23694);
-        document.getElementById("currentSpeed").innerText = mph;
+        const speedMps = pos.coords.speed || 0;
+        const mph = Math.round(speedMps * 2.23694);
 
         if (prevPos) {
           const bearing = calculateBearing(prevPos[1], prevPos[0], newLat, newLng);
@@ -216,12 +143,12 @@
         return;
       }
       try {
-        const response = await fetch(`https://api.tomtom.com/search/2/fuzzySearch/${encodeURIComponent(query)}.json?key=${API_KEY}&countrySet=GB&lat=${userPos[1]}&lon=${userPos[0]}&limit=5`);
-        const data = await response.json();
-        
-        if (data.results && data.results.length > 0) {
+        const res = await tt.services.fuzzySearch({
+          key: API_KEY, query, countrySet: "GB", lat: userPos[1], lon: userPos[0], limit: 5
+        });
+        if (res.results && res.results.length > 0) {
           suggestionsBox.innerHTML = "";
-          data.results.forEach(item => {
+          res.results.forEach(item => {
             const div = document.createElement("div");
             div.className = "suggestion-item";
             const label = item.poi ? `${item.poi.name}, ${item.address.freeformAddress}` : item.address.freeformAddress;
@@ -230,20 +157,9 @@
               evt.preventDefault();
               destInput.blur();
               suggestionsBox.style.display = "none";
-              const coords = [item.position.lon, item.position.lat];
-              if (isAddingStop) {
-                waypoints.unshift({ name: label.split(",")[0], coords: coords });
-                isAddingStop = false;
-                destInput.placeholder = "Enter destination or postcode...";
-                destInput.value = "";
-                renderWaypoints();
-                if (isNavigating) calculateAndDrawRoutes(false);
-              } else {
-                waypoints = [{ name: label, coords: coords }];
-                destInput.value = label;
-                renderWaypoints();
-                startLiveNavigation();
-              }
+              destination = { name: label, coords: [item.position.lng, item.position.lat] };
+              destInput.value = label;
+              startNavigation();
             };
             suggestionsBox.appendChild(div);
           });
@@ -252,214 +168,82 @@
       } catch (err) {}
     });
 
-    function addStopMode() {
-      isAddingStop = true;
-      destInput.value = "";
-      destInput.placeholder = "Search stop (fuel, coffee, pickup)...";
-      destInput.focus();
-    }
-
-    function renderWaypoints() {
-      const box = document.getElementById("waypointsList");
-      box.innerHTML = "";
-      waypoints.forEach((wp, idx) => {
-        const tag = document.createElement("div");
-        tag.className = "wp-tag";
-        tag.innerHTML = `<span>${idx + 1}. ${wp.name.substring(0, 22)}</span> <b style="cursor:pointer;" onclick="removeWaypoint(${idx})">✕</b>`;
-        box.appendChild(tag);
-      });
-    }
-
-    function removeWaypoint(idx) {
-      waypoints.splice(idx, 1);
-      renderWaypoints();
-      if (waypoints.length > 0 && isNavigating) calculateAndDrawRoutes(false);
-      else if (waypoints.length === 0) stopNavigation();
-    }
-
     async function handleGo() {
       destInput.blur();
       suggestionsBox.style.display = "none";
       const query = destInput.value.trim();
-      if (!query && waypoints.length > 0) {
-        startLiveNavigation();
-        return;
-      }
       if (!query) return;
 
       document.getElementById("status").innerText = "Finding destination...";
       try {
-        const response = await fetch(`https://api.tomtom.com/search/2/fuzzySearch/${encodeURIComponent(query)}.json?key=${API_KEY}&countrySet=GB&limit=1`);
-        const data = await response.json();
-        if (!data.results || data.results.length === 0) {
+        const geoRes = await tt.services.fuzzySearch({ key: API_KEY, query, countrySet: "GB" });
+        if (!geoRes.results || geoRes.results.length === 0) {
           document.getElementById("status").innerText = "Destination not found.";
           return;
         }
-        const top = data.results[0];
+        const top = geoRes.results[0];
         const label = top.poi ? top.poi.name : top.address.freeformAddress;
-        const coords = [top.position.lon, top.position.lat];
-        if (isAddingStop) {
-          waypoints.unshift({ name: label, coords: coords });
-          isAddingStop = false;
-          destInput.value = "";
-          renderWaypoints();
-        } else {
-          waypoints = [{ name: label, coords: coords }];
-          renderWaypoints();
-        }
-        startLiveNavigation();
+        destination = { name: label, coords: [top.position.lng, top.position.lat] };
+        startNavigation();
       } catch (err) {
         document.getElementById("status").innerText = "Search error.";
       }
     }
 
-    async function startLiveNavigation() {
-      if (waypoints.length === 0) return;
+    async function startNavigation() {
+      if (!destination) return;
       isNavigating = true;
       isFollowing = true;
-      selectedRouteIndex = 0;
       document.getElementById("stopNavBtn").style.display = "inline-block";
-      document.getElementById("turnBanner").style.display = "block";
-      requestWakeLock();
 
-      await calculateAndDrawRoutes(true);
+      await calculateAndDrawRoute();
       if (rerouteTimer) clearInterval(rerouteTimer);
-      rerouteTimer = setInterval(() => calculateAndDrawRoutes(false), 30000);
+      rerouteTimer = setInterval(calculateAndDrawRoute, 30000);
     }
 
     function stopNavigation() {
       isNavigating = false;
-      waypoints = [];
-      renderWaypoints();
+      destination = null;
       if (rerouteTimer) clearInterval(rerouteTimer);
-      document.getElementById("turnBanner").style.display = "none";
-      document.getElementById("routeChoices").style.display = "none";
       document.getElementById("stopNavBtn").style.display = "none";
+      document.getElementById("destInput").value = "";
       document.getElementById("status").innerText = "Navigation ended.";
       if (map.getLayer("route")) { map.removeLayer("route"); map.removeSource("route"); }
     }
 
-    async function calculateAndDrawRoutes(isInitial) {
-      if (!userPos || waypoints.length === 0) return;
-
-      document.getElementById("status").innerText = "Calculating route...";
-
-      // TomTom routing requires latitude,longitude format: lat1,lon1:lat2,lon2
-      const pointsList = [userPos, ...waypoints.map(w => w.coords)];
-      const coordsChain = pointsList.map(c => `${c[1]},${c[0]}`).join(":");
+    async function calculateAndDrawRoute() {
+      if (!userPos || !destination) return;
 
       try {
-        const response = await fetch(`https://api.tomtom.com/routing/1/calculateRoute/${coordsChain}/json?key=${API_KEY}&traffic=true&routeType=fastest&maxAlternatives=2`);
-        const data = await response.json();
+        const routeRes = await tt.services.calculateRoute({
+          key: API_KEY,
+          locations: `${userPos[0]},${userPos[1]}:${destination.coords[0]},${destination.coords[1]}`,
+          traffic: true,
+          routeType: "fastest"
+        });
 
-        if (!data.routes || data.routes.length === 0) {
-          document.getElementById("status").innerText = "Could not find route.";
-          return;
+        const geojson = routeRes.toGeoJson();
+        if (map.getLayer("route")) {
+          map.removeLayer("route");
+          map.removeSource("route");
         }
 
-        availableRoutes = data.routes;
-        if (selectedRouteIndex >= availableRoutes.length) selectedRouteIndex = 0;
+        map.addLayer({
+          id: "route",
+          type: "line",
+          source: { type: "geojson", data: geojson },
+          paint: { "line-color": "#007aff", "line-width": 8 }
+        });
 
-        renderRouteChoices();
-        drawSelectedRoute(data, isInitial);
+        const summary = routeRes.routes[0].summary;
+        const mins = Math.round(summary.travelTimeInSeconds / 60);
+        const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
+
+        document.getElementById("status").className = delayMins > 5 ? "alert" : "";
+        document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay) • Auto-divert active`;
+        if (isFollowing) map.setCenter(userPos);
       } catch (err) {
-        console.error("Route error:", err);
-        document.getElementById("status").innerText = "Route connection error.";
-      }
-    }
-
-    function renderRouteChoices() {
-      const container = document.getElementById("routeChoices");
-      if (availableRoutes.length <= 1) {
-        container.style.display = "none";
-        return;
-      }
-      container.style.display = "flex";
-      container.innerHTML = "";
-      availableRoutes.forEach((r, idx) => {
-        const mins = Math.round(r.summary.travelTimeInSeconds / 60);
-        const miles = (r.summary.lengthInMeters * 0.000621371).toFixed(1);
-        const card = document.createElement("div");
-        card.className = `route-card ${idx === selectedRouteIndex ? "active" : ""}`;
-        card.innerHTML = `<b>${mins} min</b><br><span style="color:#a0aec0;">${miles} mi</span>`;
-        card.onclick = () => {
-          selectedRouteIndex = idx;
-          drawSelectedRoute({ routes: availableRoutes }, false);
-        };
-        container.appendChild(card);
-      });
-    }
-
-    function drawSelectedRoute(data, isInitial) {
-      const route = availableRoutes[selectedRouteIndex];
-      const coords = route.legs.flatMap(leg => leg.points.map(p => [p.longitude, p.latitude]));
-
-      const geojson = {
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: coords }
-      };
-
-      if (map.getLayer("route")) {
-        map.removeLayer("route");
-        map.removeSource("route");
-      }
-
-      map.addLayer({
-        id: "route",
-        type: "line",
-        source: { type: "geojson", data: geojson },
-        paint: { "line-color": "#007aff", "line-width": 8 }
-      });
-
-      const summary = route.summary;
-      const mins = Math.round(summary.travelTimeInSeconds / 60);
-      const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
-
-      const guidance = route.guidance || {};
-      const instructions = guidance.instructions || [];
-      const nextStep = instructions.length > 1 ? instructions[1] : instructions[0];
-
-      if (nextStep && nextStep.message) {
-        const distMeters = nextStep.routeOffsetInMeters || 0;
-        const distYards = Math.round(distMeters * 1.09361);
-        const distLabel = distYards > 400 ? `${(distMeters * 0.000621371).toFixed(1)} miles` : `${distYards} yards`;
-
-        document.getElementById("turnText").innerText = nextStep.message;
-        document.getElementById("turnSub").innerText = `In ${distLabel}`;
-
-        if (isInitial || distYards < 300) {
-          speak(`In ${distLabel}, ${nextStep.message}`);
-        }
-      } else {
-        document.getElementById("turnText").innerText = `Head to ${waypoints[0].name.split(",")[0]}`;
-        document.getElementById("turnSub").innerText = `${(summary.lengthInMeters * 0.000621371).toFixed(1)} miles remaining`;
-        if (isInitial) speak(`Navigation started. Estimated time ${mins} minutes.`);
-      }
-
-      document.getElementById("status").className = delayMins > 5 ? "alert" : "";
-      document.getElementById("status").innerText = `ETA: ${mins} min (${delayMins}m traffic delay)`;
-      if (isFollowing) map.setCenter(userPos);
-    }
-
-    function saveFavorite() {
-      if (waypoints.length === 0) return alert("Set a destination first to save it.");
-      const favs = JSON.parse(localStorage.getItem("ukNavFavs") || "[]");
-      favs.push(waypoints[waypoints.length - 1]);
-      localStorage.setItem("ukNavFavs", JSON.stringify(favs));
-      alert("Saved to Favorites!");
-    }
-
-    function loadFavorite() {
-      const favs = JSON.parse(localStorage.getItem("ukNavFavs") || "[]");
-      if (favs.length === 0) return alert("No saved favorites yet.");
-      const list = favs.map((f, i) => `${i + 1}: ${f.name}`).join("\n");
-      const pick = prompt(`Enter number to route:\n${list}`);
-      const idx = parseInt(pick) - 1;
-      if (favs[idx]) {
-        waypoints = [favs[idx]];
-        destInput.value = favs[idx].name;
-        renderWaypoints();
-        startLiveNavigation();
+        document.getElementById("status").innerText = "Traffic connection error.";
       }
     }
   </script>
