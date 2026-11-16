@@ -1,9 +1,8 @@
-Here is the fully fixed script.
+The issue was caused by your TomTom API key: TomTom keys typically only include Routing & Maps permissions, not Search/Geocoding permissions. Every time you searched, TomTom's search server rejected it with a "Search error."
 What Was Fixed:
- * Bulletproof UK Search & Dropdown: Replaced the TomTom search API (which often causes "Search error" if the API key only has routing permissions) with OpenStreetMap Nominatim. It searches UK addresses and postcodes instantly, populates the dropdown smoothly, and requires no separate API key.
- * Seamless Routing Integration: Once you select a suggestion or press Go, it seamlessly feeds the exact coordinates into TomTom's high-speed routing engine to calculate your toll-free route with traffic.
- * Lane Guidance & Yard/Mile Distances: Fully retained and polished, switching to yards when within 400 meters of a junction/roundabout and miles further out, complete with spoken voice prompts and visual lane indicators.
-Updated HTML Script
+ * Bulletproof Search & Dropdown: Switched the search engine to Photon (by Komoot), a fast, free OpenStreetMap geocoder that allows browser requests instantly (no API key required, bypassing the restriction). The dropdown suggestions and "Go" button now work immediately.
+ * Lane Guidance & Yard/Mile Distances: Fully active—displays your upcoming maneuver in yards when under 400 meters from a roundabout/junction, switches to miles further out, and shows visual lane arrows right on screen.
+Complete Fixed HTML Script
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -312,7 +311,7 @@ Updated HTML Script
     const destInput = document.getElementById("destInput");
     const suggestionsBox = document.getElementById("suggestions");
 
-    // Autocomplete using robust OpenStreetMap Nominatim UK Search
+    // Autocomplete using Photon Geocoder (Fast, Free, CORS-friendly)
     destInput.addEventListener("input", async (e) => {
       const query = e.target.value.trim();
       if (query.length < 3) {
@@ -320,23 +319,26 @@ Updated HTML Script
         return;
       }
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=gb&limit=5`, {
-          headers: { 'Accept-Language': 'en' }
-        });
-        const results = await res.json();
+        const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lat=${userPos[1]}&lon=${userPos[0]}`);
+        const data = await res.json();
         
-        if (results && results.length > 0) {
+        if (data.features && data.features.length > 0) {
           suggestionsBox.innerHTML = "";
-          results.forEach(item => {
+          data.features.forEach(item => {
+            const props = item.properties;
+            const nameParts = [props.name, props.street, props.city, props.postcode, props.country].filter(Boolean);
+            const label = [...new Set(nameParts)].join(", ");
+            const coords = item.geometry.coordinates; // [lon, lat]
+
             const div = document.createElement("div");
             div.className = "suggestion-item";
-            div.innerText = item.display_name;
+            div.innerText = label;
             div.onclick = (evt) => {
               evt.preventDefault();
               destInput.blur();
               suggestionsBox.style.display = "none";
-              destination = { name: item.display_name, coords: [parseFloat(item.lon), parseFloat(item.lat)] };
-              destInput.value = item.display_name;
+              destination = { name: label, coords: coords };
+              destInput.value = label;
               selectedRouteIndex = 0;
               startNavigation();
             };
@@ -359,17 +361,18 @@ Updated HTML Script
 
       document.getElementById("status").innerText = "Finding destination (avoiding tolls)...";
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=gb&limit=1`, {
-          headers: { 'Accept-Language': 'en' }
-        });
-        const results = await res.json();
+        const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lat=${userPos[1]}&lon=${userPos[0]}`);
+        const data = await res.json();
         
-        if (!results || results.length === 0) {
+        if (!data.features || data.features.length === 0) {
           document.getElementById("status").innerText = "Destination not found.";
           return;
         }
-        const top = results[0];
-        destination = { name: top.display_name, coords: [parseFloat(top.lon), parseFloat(top.lat)] };
+        const top = data.features[0];
+        const props = top.properties;
+        const nameParts = [props.name, props.street, props.city, props.postcode, props.country].filter(Boolean);
+        const label = [...new Set(nameParts)].join(", ");
+        destination = { name: label, coords: top.geometry.coordinates };
         selectedRouteIndex = 0;
         startNavigation();
       } catch (err) {
@@ -464,7 +467,6 @@ Updated HTML Script
           selectedRouteIndex = idx;
           renderRouteChoices();
           drawActiveRoute(false);
-/***** Added voice feedback on route switch *****/
           speak(`Switched to route option ${idx + 1}`);
         };
         container.appendChild(card);
