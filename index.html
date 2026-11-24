@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>UK Navigation</title>
+  <title>UK Fast Navigation</title>
   <link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css" />
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
   <style>
@@ -51,11 +51,11 @@
     #instructionText { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
     #distanceText { font-size: 15px; color: #61dafb; font-weight: 800; }
 
-    #statusRow { display: flex; justify-content: space-between; align-items: center; }
+    #statusRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     #status { font-size: 13px; color: #a0aec0; }
-    #trafficBadge {
-      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px;
-      background: rgba(72, 187, 120, 0.2); color: #68d391; display: none;
+    #routeBadge {
+      font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px;
+      background: rgba(72, 187, 120, 0.2); color: #68d391; display: none; white-space: nowrap;
     }
 
     #speedBox {
@@ -78,20 +78,20 @@
 <body>
   <div id="panel">
     <div class="row">
-      <input id="destInput" type="search" placeholder="Postcode, street, or place (e.g. CV10 7EL, Asda)..." autocomplete="off" autocorrect="off" spellcheck="false" />
+      <input id="destInput" type="search" placeholder="Search UK postcode, street, or place..." autocomplete="off" autocorrect="off" spellcheck="false" />
       <div id="suggestions"></div>
       <button type="button" onclick="handleSearch()">Go</button>
       <button type="button" id="stopNavBtn" class="btn-danger" style="display:none;" onclick="stopNavigation()">End</button>
     </div>
 
     <div id="guidanceBox">
-      <div id="instructionText">Calculating fastest route...</div>
+      <div id="instructionText">Finding fastest route...</div>
       <div id="distanceText">--</div>
     </div>
 
     <div id="statusRow">
       <div id="status">Waiting for GPS signal...</div>
-      <div id="trafficBadge">LIVE TRAFFIC</div>
+      <div id="routeBadge">30s FASTEST SYNC</div>
     </div>
   </div>
 
@@ -106,18 +106,23 @@
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
+    const ROUTE_REFRESH_MS = 30000; // Every 30 seconds
+    const SWITCH_SAVINGS_SECONDS = 60; // Switch automatically if new route saves >= 60s
+
     let userPos = [-1.467, 52.523];
     let prevPos = null;
     let destination = null;
     let isNavigating = false;
     let isFollowing = true;
     let searchTimeout = null;
+    let routeTimer = null;
     let lastSpoken = "";
     let wakeLock = null;
     let routeSteps = [];
     let routePolyline = [];
     let currentStepIndex = 0;
-    let isRerouting = false;
+    let activeTravelTimeSec = null;
+    let isUpdatingRoute = false;
 
     async function requestWakeLock() {
       try {
@@ -152,8 +157,8 @@
       map.setCenter(userPos);
     }
 
-    function speak(text) {
-      if (!text || text === lastSpoken || !("speechSynthesis" in window)) return;
+    function speak(text, force = false) {
+      if (!text || (!force && text === lastSpoken) || !("speechSynthesis" in window)) return;
       lastSpoken = text;
       window.speechSynthesis.cancel();
       const msg = new SpeechSynthesisUtterance(text);
@@ -217,7 +222,7 @@
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
     );
 
-    // Apple Maps / Waze Style UK Fuzzy Search (TomTom Search API v2)
+    // Exact UK Address / Postcode / POI Search (Apple & Waze style)
     async function fetchPlaces(query) {
       try {
         const url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json` +
@@ -225,7 +230,7 @@
           `&countrySet=GB` +
           `&language=en-GB` +
           `&typeahead=true` +
-          `&limit=7` +
+          `&limit=8` +
           `&lat=${userPos[1]}` +
           `&lon=${userPos[0]}` +
           `&idxSet=PAD,Addr,POI,Str,Geo,EPP`;
@@ -237,6 +242,11 @@
           return data.results.map(item => {
             const addr = item.address || {};
             const poiName = item.poi ? item.poi.name : null;
+
+            // Prefer exact entry point if available for faster arrival
+            const entry = (item.entryPoints && item.entryPoints.length > 0)
+              ? item.entryPoints[0].position
+              : item.position;
 
             const title = poiName || addr.streetNameAndNumber || addr.streetName || addr.freeformAddress || query;
             const subtitleParts = [
@@ -253,7 +263,7 @@
               subtitle,
               fullLabel: poiName ? `${poiName}, ${subtitle}` : (addr.freeformAddress || title),
               distMiles,
-              coords: [item.position.lon, item.position.lat]
+              coords: [entry.lon, entry.lat]
             };
           });
         }
@@ -300,7 +310,7 @@
         } else {
           suggestionsBox.style.display = "none";
         }
-      }, 220);
+      }, 200);
     });
 
     destInput.addEventListener("keydown", (e) => {
@@ -316,10 +326,10 @@
       const q = destInput.value.trim();
       if (!q) return;
 
-      document.getElementById("status").innerText = "Searching UK address...";
+      document.getElementById("status").innerText = "Searching exact UK location...";
       const results = await fetchPlaces(q);
       if (results.length === 0) {
-        document.getElementById("status").innerText = "Address not found. Try postcode or street.";
+        document.getElementById("status").innerText = "Location not found.";
         return;
       }
       destination = { name: results[0].fullLabel, coords: results[0].coords };
@@ -327,17 +337,59 @@
       startNavigation();
     }
 
-    // Sensor-Based Live Traffic Routing (TomTom Routing API v1)
-    async function startNavigation(isReroute = false) {
-      if (!destination) return;
-      isNavigating = true;
-      isFollowing = true;
-      if (!isReroute) lastSpoken = "";
-      document.getElementById("stopNavBtn").style.display = "inline-block";
-      await requestWakeLock();
+    function applyRouteToMap(route) {
+      const summary = route.summary;
+      const newTravelTimeSec = summary.travelTimeInSeconds;
 
-      if (destMarker) destMarker.remove();
-      destMarker = new tt.Marker({ color: "#e53e3e" }).setLngLat(destination.coords).addTo(map);
+      routePolyline = [];
+      route.legs.forEach(leg => {
+        leg.points.forEach(pt => {
+          routePolyline.push([pt.longitude, pt.latitude]);
+        });
+      });
+
+      if (map.getLayer("route")) {
+        map.removeLayer("route");
+        map.removeSource("route");
+      }
+      map.addLayer({
+        id: "route",
+        type: "line",
+        source: {
+          type: "geojson",
+          data: { type: "Feature", geometry: { type: "LineString", coordinates: routePolyline } }
+        },
+        paint: { "line-color": "#007aff", "line-width": 8 }
+      });
+
+      routeSteps = [];
+      if (route.guidance && route.guidance.instructions) {
+        route.guidance.instructions.forEach(inst => {
+          routeSteps.push({
+            instruction: inst.message || "Continue straight",
+            location: [inst.point.longitude, inst.point.latitude]
+          });
+        });
+      }
+      currentStepIndex = 0;
+      activeTravelTimeSec = newTravelTimeSec;
+
+      const mins = Math.max(1, Math.round(newTravelTimeSec / 60));
+      const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
+      const miles = (summary.lengthInMeters * 0.000621371).toFixed(1);
+      const delayText = delayMins > 0 ? ` (${delayMins}m traffic)` : " (Fastest)";
+
+      document.getElementById("status").innerText = `ETA: ${mins} min (${miles} mi)${delayText}`;
+      document.getElementById("guidanceBox").style.display = "block";
+      if (routeSteps.length > 0) {
+        document.getElementById("instructionText").innerText = routeSteps[0].instruction;
+      }
+    }
+
+    // Calculates fastest route with traffic; optionally only switches if meaningfully faster
+    async function calculateFastestRoute({ forceApply = false, reason = "initial" } = {}) {
+      if (!destination || isUpdatingRoute) return;
+      isUpdatingRoute = true;
 
       try {
         const originStr = `${userPos[1]},${userPos[0]}`;
@@ -356,90 +408,94 @@
         const data = await res.json();
 
         if (!data.routes || data.routes.length === 0) {
-          document.getElementById("status").innerText = "Route calculation failed.";
-          isRerouting = false;
+          if (forceApply) document.getElementById("status").innerText = "Route calculation failed.";
+          isUpdatingRoute = false;
           return;
         }
 
-        const route = data.routes[0];
-        const summary = route.summary;
-
-        // Build route line coordinates
-        routePolyline = [];
-        route.legs.forEach(leg => {
-          leg.points.forEach(pt => {
-            routePolyline.push([pt.longitude, pt.latitude]);
-          });
-        });
-
-        if (map.getLayer("route")) {
-          map.removeLayer("route");
-          map.removeSource("route");
-        }
-        map.addLayer({
-          id: "route",
-          type: "line",
-          source: {
-            type: "geojson",
-            data: { type: "Feature", geometry: { type: "LineString", coordinates: routePolyline } }
-          },
-          paint: { "line-color": "#007aff", "line-width": 8 }
-        });
-
-        // Parse TomTom turn-by-turn guidance instructions
-        routeSteps = [];
-        if (route.guidance && route.guidance.instructions) {
-          route.guidance.instructions.forEach(inst => {
-            routeSteps.push({
-              instruction: inst.message || "Continue straight",
-              location: [inst.point.longitude, inst.point.latitude]
-            });
-          });
-        }
-        currentStepIndex = 0;
-
-        const mins = Math.round(summary.travelTimeInSeconds / 60);
-        const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
-        const miles = (summary.lengthInMeters * 0.000621371).toFixed(1);
-
-        const delayText = delayMins > 0 ? ` (+${delayMins}m traffic)` : " (Clear)";
-        document.getElementById("status").innerText = `ETA: ${mins} min (${miles} mi)${delayText}`;
-
-        const badge = document.getElementById("trafficBadge");
+        const candidateRoute = data.routes[0];
+        const candidateTimeSec = candidateRoute.summary.travelTimeInSeconds;
+        const badge = document.getElementById("routeBadge");
         badge.style.display = "inline-block";
-        badge.innerText = delayMins > 2 ? `AVOIDING TRAFFIC (+${delayMins}m)` : "LIVE TRAFFIC";
-        badge.style.background = delayMins > 2 ? "rgba(237, 137, 54, 0.25)" : "rgba(72, 187, 120, 0.2)";
-        badge.style.color = delayMins > 2 ? "#fbd38d" : "#68d391";
 
-        document.getElementById("guidanceBox").style.display = "block";
-        if (routeSteps.length > 0) {
-          document.getElementById("instructionText").innerText = routeSteps[0].instruction;
-        }
-
-        if (!isReroute) {
-          speak(`Route calculated using live traffic. Estimated time ${mins} minutes.`);
+        if (forceApply || activeTravelTimeSec === null) {
+          applyRouteToMap(candidateRoute);
+          const mins = Math.max(1, Math.round(candidateTimeSec / 60));
+          badge.innerText = "FASTEST ROUTE";
+          badge.style.background = "rgba(72, 187, 120, 0.2)";
+          badge.style.color = "#68d391";
+          if (reason === "initial") {
+            speak(`Fastest route set. Estimated time ${mins} minutes.`);
+          } else if (reason === "offroute") {
+            speak("Off route. Switching to fastest route.");
+          }
         } else {
-          speak("Recalculating fastest route.");
+          // 30-second check: switch if new route saves >= SWITCH_SAVINGS_SECONDS
+          const timeSavedSec = activeTravelTimeSec - candidateTimeSec;
+          if (timeSavedSec >= SWITCH_SAVINGS_SECONDS) {
+            applyRouteToMap(candidateRoute);
+            const savedMins = Math.max(1, Math.round(timeSavedSec / 60));
+            badge.innerText = `SWITCHED (-${savedMins}m)`;
+            badge.style.background = "rgba(237, 137, 54, 0.25)";
+            badge.style.color = "#fbd38d";
+            speak(`Traffic ahead. Switching to a faster route saving ${savedMins} minute${savedMins > 1 ? "s" : ""}.`, true);
+          } else {
+            // Keep active route, refresh ETA display with current live travel time
+            activeTravelTimeSec = candidateTimeSec;
+            const mins = Math.max(1, Math.round(candidateTimeSec / 60));
+            const delayMins = Math.round((candidateRoute.summary.trafficDelayInSeconds || 0) / 60);
+            const miles = (candidateRoute.summary.lengthInMeters * 0.000621371).toFixed(1);
+            document.getElementById("status").innerText = `ETA: ${mins} min (${miles} mi)${delayMins > 0 ? ` (${delayMins}m traffic)` : " (Fastest)"}`;
+            badge.innerText = "30s CHECK: OPTIMAL";
+            badge.style.background = "rgba(72, 187, 120, 0.2)";
+            badge.style.color = "#68d391";
+          }
         }
 
         if (isFollowing) map.setCenter(userPos);
-        isRerouting = false;
-
       } catch (err) {
-        document.getElementById("status").innerText = "Routing error.";
-        isRerouting = false;
+        if (forceApply) document.getElementById("status").innerText = "Routing error.";
+      } finally {
+        isUpdatingRoute = false;
       }
+    }
+
+    async function startNavigation() {
+      if (!destination) return;
+      isNavigating = true;
+      isFollowing = true;
+      activeTravelTimeSec = null;
+      lastSpoken = "";
+      clearInterval(routeTimer);
+
+      document.getElementById("stopNavBtn").style.display = "inline-block";
+      await requestWakeLock();
+
+      if (destMarker) destMarker.remove();
+      destMarker = new tt.Marker({ color: "#e53e3e" }).setLngLat(destination.coords).addTo(map);
+
+      await calculateFastestRoute({ forceApply: true, reason: "initial" });
+
+      // Check every 30 seconds for a faster route around traffic
+      routeTimer = setInterval(() => {
+        if (isNavigating && destination) {
+          calculateFastestRoute({ forceApply: false, reason: "30s-check" });
+        }
+      }, ROUTE_REFRESH_MS);
     }
 
     function stopNavigation() {
       isNavigating = false;
       destination = null;
       routePolyline = [];
+      activeTravelTimeSec = null;
+      clearInterval(routeTimer);
+
       if (destMarker) { destMarker.remove(); destMarker = null; }
       if (wakeLock) { wakeLock.release(); wakeLock = null; }
       document.getElementById("stopNavBtn").style.display = "none";
       document.getElementById("guidanceBox").style.display = "none";
-      document.getElementById("trafficBadge").style.display = "none";
+      document.getElementById("routeBadge").style.display = "none";
       document.getElementById("destInput").value = "";
       document.getElementById("status").innerText = "Navigation ended.";
       if (map.getLayer("route")) { map.removeLayer("route"); map.removeSource("route"); }
@@ -448,16 +504,15 @@
     function updateNavigationProgress(lat, lon) {
       if (!routeSteps.length) return;
 
-      // Check if driver went off-route (> 50m from closest route point)
-      if (routePolyline.length > 0 && !isRerouting) {
+      // Off-route check (> 55m from active route)
+      if (routePolyline.length > 0 && !isUpdatingRoute) {
         let minRouteDist = Infinity;
         for (let i = 0; i < routePolyline.length; i += 3) {
           const d = getDistanceMeters(lat, lon, routePolyline[i][1], routePolyline[i][0]);
           if (d < minRouteDist) minRouteDist = d;
         }
         if (minRouteDist > 55) {
-          isRerouting = true;
-          startNavigation(true);
+          calculateFastestRoute({ forceApply: true, reason: "offroute" });
           return;
         }
       }
