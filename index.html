@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>UK Fast Navigation</title>
+  <title>UK Fast Toll-Free Navigation</title>
   <link rel="stylesheet" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css" />
   <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js"></script>
   <style>
@@ -31,7 +31,7 @@
 
     #suggestions {
       position: absolute; top: 52px; left: 0; right: 0; background: #1c2029;
-      border: 1px solid #444; border-radius: 12px; max-height: 280px; overflow-y: auto;
+      border: 1px solid #444; border-radius: 12px; max-height: 300px; overflow-y: auto;
       z-index: 999; display: none; box-shadow: 0 10px 28px rgba(0,0,0,0.85);
     }
     .suggestion-item {
@@ -42,6 +42,11 @@
     .suggestion-item:active { background: #007aff; }
     .sug-main { font-size: 15px; font-weight: 600; color: #fff; }
     .sug-sub { font-size: 12px; color: #a0aec0; margin-top: 2px; }
+    .sug-badge {
+      display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 5px;
+      border-radius: 4px; background: #2d3748; color: #90cdf4; margin-right: 5px;
+      text-transform: uppercase;
+    }
     .sug-dist { font-size: 12px; font-weight: 700; color: #61dafb; margin-left: 10px; white-space: nowrap; }
 
     #guidanceBox {
@@ -51,12 +56,16 @@
     #instructionText { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
     #distanceText { font-size: 15px; color: #61dafb; font-weight: 800; }
 
-    #statusRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    #statusRow { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
     #status { font-size: 13px; color: #a0aec0; }
-    #routeBadge {
-      font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px;
-      background: rgba(72, 187, 120, 0.2); color: #68d391; display: none; white-space: nowrap;
+    .badge-group { display: flex; gap: 5px; align-items: center; }
+    .badge {
+      font-size: 10px; font-weight: 800; padding: 3px 7px; border-radius: 6px;
+      letter-spacing: 0.3px; white-space: nowrap;
     }
+    #tollBadge { background: rgba(56, 178, 172, 0.22); color: #81e6d9; border: 1px solid rgba(56, 178, 172, 0.4); }
+    #routeBadge { background: rgba(72, 187, 120, 0.2); color: #68d391; display: none; }
+    #altBadge { background: rgba(245, 101, 101, 0.22); color: #feb2b2; display: none; }
 
     #speedBox {
       position: absolute; bottom: 30px; left: 12px; z-index: 50;
@@ -78,20 +87,24 @@
 <body>
   <div id="panel">
     <div class="row">
-      <input id="destInput" type="search" placeholder="Search UK postcode, street, or place..." autocomplete="off" autocorrect="off" spellcheck="false" />
+      <input id="destInput" type="search" placeholder="UK postcode, house & street, or place..." autocomplete="off" autocorrect="off" spellcheck="false" />
       <div id="suggestions"></div>
       <button type="button" onclick="handleSearch()">Go</button>
       <button type="button" id="stopNavBtn" class="btn-danger" style="display:none;" onclick="stopNavigation()">End</button>
     </div>
 
     <div id="guidanceBox">
-      <div id="instructionText">Finding fastest route...</div>
+      <div id="instructionText">Finding fastest toll-free route...</div>
       <div id="distanceText">--</div>
     </div>
 
     <div id="statusRow">
       <div id="status">Waiting for GPS signal...</div>
-      <div id="routeBadge">30s FASTEST SYNC</div>
+      <div class="badge-group">
+        <span id="tollBadge" class="badge">NO TOLLS</span>
+        <span id="altBadge" class="badge">ALT</span>
+        <span id="routeBadge" class="badge">FASTEST</span>
+      </div>
     </div>
   </div>
 
@@ -106,8 +119,8 @@
 
   <script>
     const API_KEY = "xo9INe5sWpthdYHRjkFKjH95KVHVGhuY";
-    const ROUTE_REFRESH_MS = 30000; // Every 30 seconds
-    const SWITCH_SAVINGS_SECONDS = 60; // Switch automatically if new route saves >= 60s
+    const ROUTE_REFRESH_MS = 30000; // Check live traffic every 30 seconds
+    const SWITCH_SAVINGS_SECONDS = 45; // Auto-switch if a bypass saves >= 45s
 
     let userPos = [-1.467, 52.523];
     let prevPos = null;
@@ -184,6 +197,11 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
+    function clearLayerIfExists(id) {
+      if (map.getLayer(id)) map.removeLayer(id);
+      if (map.getSource(id)) map.removeSource(id);
+    }
+
     // Live GPS
     navigator.geolocation.watchPosition(
       (pos) => {
@@ -215,60 +233,147 @@
           updateNavigationProgress(newLat, newLng);
         } else {
           map.setCenter(userPos);
-          document.getElementById("status").innerText = "GPS locked. Ready.";
+          document.getElementById("status").innerText = "GPS locked. Ready (Tolls avoided).";
         }
       },
       () => { document.getElementById("status").innerText = "GPS signal lost."; },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
     );
 
-    // Exact UK Address / Postcode / POI Search (Apple & Waze style)
-    async function fetchPlaces(query) {
-      try {
-        const url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json` +
-          `?key=${API_KEY}` +
-          `&countrySet=GB` +
-          `&language=en-GB` +
-          `&typeahead=true` +
-          `&limit=8` +
-          `&lat=${userPos[1]}` +
-          `&lon=${userPos[0]}` +
-          `&idxSet=PAD,Addr,POI,Str,Geo,EPP`;
+    // Format individual TomTom search result for UK addresses
+    function mapTomTomResult(item, fallbackQuery) {
+      const addr = item.address || {};
+      const poiName = item.poi ? item.poi.name : null;
 
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (data.results && data.results.length > 0) {
-          return data.results.map(item => {
-            const addr = item.address || {};
-            const poiName = item.poi ? item.poi.name : null;
-
-            // Prefer exact entry point if available for faster arrival
-            const entry = (item.entryPoints && item.entryPoints.length > 0)
-              ? item.entryPoints[0].position
-              : item.position;
-
-            const title = poiName || addr.streetNameAndNumber || addr.streetName || addr.freeformAddress || query;
-            const subtitleParts = [
-              poiName ? (addr.streetNameAndNumber || addr.streetName) : null,
-              addr.municipalitySubdivision || addr.municipality,
-              addr.postalCode
-            ].filter(Boolean);
-
-            const subtitle = subtitleParts.join(", ") || addr.freeformAddress || "United Kingdom";
-            const distMiles = item.dist ? `${(item.dist * 0.000621371).toFixed(1)} mi` : "";
-
-            return {
-              title,
-              subtitle,
-              fullLabel: poiName ? `${poiName}, ${subtitle}` : (addr.freeformAddress || title),
-              distMiles,
-              coords: [entry.lon, entry.lat]
-            };
-          });
+      let targetPos = item.position;
+      if (item.entryPoints && item.entryPoints.length > 0) {
+        const mainEntry = item.entryPoints.find(ep => ep.type === "main");
+        if (mainEntry && mainEntry.position) {
+          targetPos = mainEntry.position;
         }
-      } catch (e) {}
-      return [];
+      }
+
+      const streetLine = addr.streetNameAndNumber ||
+        [addr.streetNumber, addr.streetName].filter(Boolean).join(" ") ||
+        addr.streetName;
+
+      const postcode = addr.extendedPostalCode || addr.postalCode || "";
+      const town = addr.municipalitySubdivision || addr.municipality || addr.countrySecondarySubdivision || "";
+
+      let title = "";
+      let badge = "";
+
+      if (poiName) {
+        title = poiName;
+        badge = "PLACE";
+      } else if (item.type === "Point Address" || item.type === "Address Range") {
+        title = streetLine || addr.freeformAddress || fallbackQuery;
+        badge = "ADDRESS";
+      } else if (postcode && !streetLine) {
+        title = postcode;
+        badge = "POSTCODE";
+      } else {
+        title = streetLine || addr.freeformAddress || fallbackQuery;
+        badge = "STREET";
+      }
+
+      const subtitleParts = [
+        poiName ? streetLine : null,
+        town,
+        postcode && title !== postcode ? postcode : null
+      ].filter(Boolean);
+
+      const subtitle = subtitleParts.join(", ") || addr.freeformAddress || "United Kingdom";
+      const distMeters = getDistanceMeters(userPos[1], userPos[0], targetPos.lat, targetPos.lon);
+      const distMiles = `${(distMeters * 0.000621371).toFixed(1)} mi`;
+
+      return {
+        score: item.score || 0,
+        type: item.type,
+        badge,
+        title,
+        subtitle,
+        fullLabel: poiName
+          ? `${poiName}, ${subtitle}`
+          : [streetLine, town, postcode].filter(Boolean).join(", ") || addr.freeformAddress || title,
+        distMiles,
+        coords: [targetPos.lon, targetPos.lat]
+      };
+    }
+
+    // High-Precision UK Search (Postcode + Doorstep + POI)
+    async function fetchPlaces(rawQuery, isFinalSubmit = false) {
+      const query = rawQuery.trim();
+      if (!query) return [];
+
+      const isFullPostcode = /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(query);
+      const hasHouseNumber = /^\d+[A-Z]?\s+[A-Z]/i.test(query);
+      const useTypeahead = !isFinalSubmit && !isFullPostcode && !hasHouseNumber;
+
+      const baseParams =
+        `key=${API_KEY}` +
+        `&countrySet=GB` +
+        `&language=en-GB` +
+        `&limit=8` +
+        `&lat=${userPos[1]}` +
+        `&lon=${userPos[0]}` +
+        `&minFuzzyLevel=1` +
+        `&maxFuzzyLevel=2` +
+        `&extendedPostalCodesFor=PAD,Addr,POI`;
+
+      try {
+        const requests = [
+          fetch(`https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?${baseParams}&typeahead=${useTypeahead}&idxSet=PAD,EPP,Addr,POI,Str`)
+            .then(r => r.json())
+            .catch(() => ({ results: [] }))
+        ];
+
+        if (isFullPostcode || hasHouseNumber || isFinalSubmit) {
+          requests.push(
+            fetch(`https://api.tomtom.com/search/2/geocode/${encodeURIComponent(query)}.json?${baseParams}&idxSet=PAD,EPP,Addr,Str`)
+              .then(r => r.json())
+              .catch(() => ({ results: [] }))
+          );
+        }
+
+        const responses = await Promise.all(requests);
+        const combined = [];
+        const seenKeys = new Set();
+
+        responses.forEach(data => {
+          if (data && data.results) {
+            data.results.forEach(item => {
+              const mapped = mapTomTomResult(item, query);
+              const dedupKey = `${mapped.title.toLowerCase()}|${mapped.subtitle.toLowerCase()}`;
+              if (!seenKeys.has(dedupKey)) {
+                seenKeys.add(dedupKey);
+                combined.push(mapped);
+              }
+            });
+          }
+        });
+
+        const typePriority = {
+          "Point Address": 4,
+          "POI": 3,
+          "Address Range": 3,
+          "Street": 2,
+          "Cross Street": 2,
+          "Geography": 1
+        };
+
+        combined.sort((a, b) => {
+          if (isFullPostcode || hasHouseNumber) {
+            const pDiff = (typePriority[b.type] || 0) - (typePriority[a.type] || 0);
+            if (pDiff !== 0) return pDiff;
+          }
+          return b.score - a.score;
+        });
+
+        return combined.slice(0, 7);
+      } catch (e) {
+        return [];
+      }
     }
 
     const destInput = document.getElementById("destInput");
@@ -283,7 +388,7 @@
       }
 
       searchTimeout = setTimeout(async () => {
-        const results = await fetchPlaces(q);
+        const results = await fetchPlaces(q, false);
         suggestionsBox.innerHTML = "";
         if (results.length > 0) {
           results.forEach(item => {
@@ -291,7 +396,7 @@
             div.className = "suggestion-item";
             div.innerHTML = `
               <div>
-                <div class="sug-main">${item.title}</div>
+                <div class="sug-main"><span class="sug-badge">${item.badge}</span>${item.title}</div>
                 <div class="sug-sub">${item.subtitle}</div>
               </div>
               <div class="sug-dist">${item.distMiles}</div>
@@ -310,7 +415,7 @@
         } else {
           suggestionsBox.style.display = "none";
         }
-      }, 200);
+      }, 220);
     });
 
     destInput.addEventListener("keydown", (e) => {
@@ -326,10 +431,10 @@
       const q = destInput.value.trim();
       if (!q) return;
 
-      document.getElementById("status").innerText = "Searching exact UK location...";
-      const results = await fetchPlaces(q);
+      document.getElementById("status").innerText = "Locating exact UK address...";
+      const results = await fetchPlaces(q, true);
       if (results.length === 0) {
-        document.getElementById("status").innerText = "Location not found.";
+        document.getElementById("status").innerText = "Location not found. Check postcode or street.";
         return;
       }
       destination = { name: results[0].fullLabel, coords: results[0].coords };
@@ -337,21 +442,84 @@
       startNavigation();
     }
 
-    function applyRouteToMap(route) {
-      const summary = route.summary;
-      const newTravelTimeSec = summary.travelTimeInSeconds;
-
-      routePolyline = [];
+    function extractRouteCoords(route) {
+      const coords = [];
       route.legs.forEach(leg => {
         leg.points.forEach(pt => {
-          routePolyline.push([pt.longitude, pt.latitude]);
+          coords.push([pt.longitude, pt.latitude]);
         });
       });
+      return coords;
+    }
 
-      if (map.getLayer("route")) {
-        map.removeLayer("route");
-        map.removeSource("route");
+    // Draw primary fastest toll-free route + traffic congestion highlights + slower alternative bypass view
+    function renderRoutesOnMap(bestRoute, altRoutes = []) {
+      const summary = bestRoute.summary;
+      const newTravelTimeSec = summary.travelTimeInSeconds;
+      routePolyline = extractRouteCoords(bestRoute);
+
+      clearLayerIfExists("alt-route-traffic");
+      clearLayerIfExists("alt-route");
+      clearLayerIfExists("route-jam-red");
+      clearLayerIfExists("route-jam-amber");
+      clearLayerIfExists("route");
+
+      // 1. Draw secondary/alternative toll-free route (e.g. congested main road being skipped)
+      const altBadge = document.getElementById("altBadge");
+      if (altRoutes.length > 0) {
+        const altRoute = altRoutes[0];
+        const altCoords = extractRouteCoords(altRoute);
+        const altDiffMins = Math.round((altRoute.summary.travelTimeInSeconds - newTravelTimeSec) / 60);
+        const altDelayMins = Math.round((altRoute.summary.trafficDelayInSeconds || 0) / 60);
+
+        map.addLayer({
+          id: "alt-route",
+          type: "line",
+          source: {
+            type: "geojson",
+            data: { type: "Feature", geometry: { type: "LineString", coordinates: altCoords } }
+          },
+          paint: {
+            "line-color": "#718096",
+            "line-width": 6,
+            "line-opacity": 0.75,
+            "line-dasharray": [2, 1.5]
+          }
+        });
+
+        // Highlight jammed segments on the skipped alternative route in red
+        if (altRoute.sections) {
+          const altJamFeatures = altRoute.sections
+            .filter(s => s.sectionType === "traffic" && (s.magnitudeOfDelay >= 2 || s.simpleCategory === "JAM" || s.simpleCategory === "ROAD_CLOSED"))
+            .map(s => ({
+              type: "Feature",
+              geometry: {
+                type: "LineString",
+                coordinates: altCoords.slice(s.startPointIndex, s.endPointIndex + 1)
+              }
+            }));
+
+          if (altJamFeatures.length > 0) {
+            map.addLayer({
+              id: "alt-route-traffic",
+              type: "line",
+              source: { type: "geojson", data: { type: "FeatureCollection", features: altJamFeatures } },
+              paint: { "line-color": "#e53e3e", "line-width": 7, "line-opacity": 0.9 }
+            });
+          }
+        }
+
+        altBadge.style.display = "inline-block";
+        if (altDiffMins > 0) {
+          altBadge.innerText = `ALT: +${altDiffMins}m${altDelayMins > 0 ? " JAM" : ""}`;
+        } else {
+          altBadge.innerText = "ALT ROUTE SHOWN";
+        }
+      } else {
+        altBadge.style.display = "none";
       }
+
+      // 2. Draw primary active fastest toll-free route
       map.addLayer({
         id: "route",
         type: "line",
@@ -362,9 +530,48 @@
         paint: { "line-color": "#007aff", "line-width": 8 }
       });
 
+      // 3. Highlight any slowdowns/jams directly on your active route (Amber = slow, Red = heavy jam)
+      if (bestRoute.sections) {
+        const amberFeatures = [];
+        const redFeatures = [];
+
+        bestRoute.sections.forEach(s => {
+          if (s.sectionType === "traffic") {
+            const segCoords = routePolyline.slice(s.startPointIndex, s.endPointIndex + 1);
+            if (segCoords.length >= 2) {
+              const feature = { type: "Feature", geometry: { type: "LineString", coordinates: segCoords } };
+              if (s.magnitudeOfDelay >= 3 || s.simpleCategory === "JAM" || s.simpleCategory === "ROAD_CLOSED") {
+                redFeatures.push(feature);
+              } else if (s.magnitudeOfDelay >= 1 || s.simpleCategory === "SLOW") {
+                amberFeatures.push(feature);
+              }
+            }
+          }
+        });
+
+        if (amberFeatures.length > 0) {
+          map.addLayer({
+            id: "route-jam-amber",
+            type: "line",
+            source: { type: "geojson", data: { type: "FeatureCollection", features: amberFeatures } },
+            paint: { "line-color": "#ed8936", "line-width": 8 }
+          });
+        }
+
+        if (redFeatures.length > 0) {
+          map.addLayer({
+            id: "route-jam-red",
+            type: "line",
+            source: { type: "geojson", data: { type: "FeatureCollection", features: redFeatures } },
+            paint: { "line-color": "#e53e3e", "line-width": 9 }
+          });
+        }
+      }
+
+      // 4. Parse turn-by-turn guidance
       routeSteps = [];
-      if (route.guidance && route.guidance.instructions) {
-        route.guidance.instructions.forEach(inst => {
+      if (bestRoute.guidance && bestRoute.guidance.instructions) {
+        bestRoute.guidance.instructions.forEach(inst => {
           routeSteps.push({
             instruction: inst.message || "Continue straight",
             location: [inst.point.longitude, inst.point.latitude]
@@ -377,17 +584,17 @@
       const mins = Math.max(1, Math.round(newTravelTimeSec / 60));
       const delayMins = Math.round((summary.trafficDelayInSeconds || 0) / 60);
       const miles = (summary.lengthInMeters * 0.000621371).toFixed(1);
-      const delayText = delayMins > 0 ? ` (${delayMins}m traffic)` : " (Fastest)";
+      const trafficText = delayMins > 0 ? ` • ${delayMins}m delay` : " • Clear";
 
-      document.getElementById("status").innerText = `ETA: ${mins} min (${miles} mi)${delayText}`;
+      document.getElementById("status").innerText = `ETA: ${mins} min (${miles} mi)${trafficText}`;
       document.getElementById("guidanceBox").style.display = "block";
       if (routeSteps.length > 0) {
         document.getElementById("instructionText").innerText = routeSteps[0].instruction;
       }
     }
 
-    // Calculates fastest route with traffic; optionally only switches if meaningfully faster
-    async function calculateFastestRoute({ forceApply = false, reason = "initial" } = {}) {
+    // Always avoids tolls; requests alternatives; auto-switches every 30s if traffic makes another route faster
+    async function calculateFastestTollFreeRoute({ forceApply = false, reason = "initial" } = {}) {
       if (!destination || isUpdatingRoute) return;
       isUpdatingRoute = true;
 
@@ -397,9 +604,13 @@
 
         const url = `https://api.tomtom.com/routing/1/calculateRoute/${originStr}:${destStr}/json` +
           `?key=${API_KEY}` +
+          `&avoid=tollRoads` +
           `&traffic=true` +
           `&routeType=fastest` +
           `&travelMode=car` +
+          `&maxAlternatives=2` +
+          `&sectionType=traffic` +
+          `&sectionType=tollRoad` +
           `&instructionsType=text` +
           `&language=en-GB` +
           `&computeTravelTimeFor=all`;
@@ -408,45 +619,49 @@
         const data = await res.json();
 
         if (!data.routes || data.routes.length === 0) {
-          if (forceApply) document.getElementById("status").innerText = "Route calculation failed.";
+          if (forceApply) document.getElementById("status").innerText = "Toll-free route calculation failed.";
           isUpdatingRoute = false;
           return;
         }
 
-        const candidateRoute = data.routes[0];
-        const candidateTimeSec = candidateRoute.summary.travelTimeInSeconds;
+        // Guarantee zero toll sections and sort strictly by fastest live traffic time
+        const validRoutes = data.routes
+          .filter(r => !r.sections || !r.sections.some(s => s.sectionType === "tollRoad"))
+          .sort((a, b) => a.summary.travelTimeInSeconds - b.summary.travelTimeInSeconds);
+
+        const candidateRoutes = validRoutes.length > 0 ? validRoutes : data.routes;
+        const bestRoute = candidateRoutes[0];
+        const altRoutes = candidateRoutes.slice(1);
+        const bestTimeSec = bestRoute.summary.travelTimeInSeconds;
+
         const badge = document.getElementById("routeBadge");
         badge.style.display = "inline-block";
 
         if (forceApply || activeTravelTimeSec === null) {
-          applyRouteToMap(candidateRoute);
-          const mins = Math.max(1, Math.round(candidateTimeSec / 60));
-          badge.innerText = "FASTEST ROUTE";
+          renderRoutesOnMap(bestRoute, altRoutes);
+          const mins = Math.max(1, Math.round(bestTimeSec / 60));
+          badge.innerText = "FASTEST";
           badge.style.background = "rgba(72, 187, 120, 0.2)";
           badge.style.color = "#68d391";
           if (reason === "initial") {
-            speak(`Fastest route set. Estimated time ${mins} minutes.`);
+            speak(`Fastest toll-free route set. Estimated time ${mins} minutes.`);
           } else if (reason === "offroute") {
-            speak("Off route. Switching to fastest route.");
+            speak("Off route. Switching to fastest toll-free route.");
           }
         } else {
-          // 30-second check: switch if new route saves >= SWITCH_SAVINGS_SECONDS
-          const timeSavedSec = activeTravelTimeSec - candidateTimeSec;
+          // 30-second live check: switch if a bypass saves >= SWITCH_SAVINGS_SECONDS
+          const timeSavedSec = activeTravelTimeSec - bestTimeSec;
           if (timeSavedSec >= SWITCH_SAVINGS_SECONDS) {
-            applyRouteToMap(candidateRoute);
+            renderRoutesOnMap(bestRoute, altRoutes);
             const savedMins = Math.max(1, Math.round(timeSavedSec / 60));
-            badge.innerText = `SWITCHED (-${savedMins}m)`;
+            badge.innerText = `REROUTED (-${savedMins}m)`;
             badge.style.background = "rgba(237, 137, 54, 0.25)";
             badge.style.color = "#fbd38d";
-            speak(`Traffic ahead. Switching to a faster route saving ${savedMins} minute${savedMins > 1 ? "s" : ""}.`, true);
+            speak(`Traffic ahead. Switching to faster toll-free bypass saving ${savedMins} minute${savedMins > 1 ? "s" : ""}.`, true);
           } else {
-            // Keep active route, refresh ETA display with current live travel time
-            activeTravelTimeSec = candidateTimeSec;
-            const mins = Math.max(1, Math.round(candidateTimeSec / 60));
-            const delayMins = Math.round((candidateRoute.summary.trafficDelayInSeconds || 0) / 60);
-            const miles = (candidateRoute.summary.lengthInMeters * 0.000621371).toFixed(1);
-            document.getElementById("status").innerText = `ETA: ${mins} min (${miles} mi)${delayMins > 0 ? ` (${delayMins}m traffic)` : " (Fastest)"}`;
-            badge.innerText = "30s CHECK: OPTIMAL";
+            // Keep active route steady, refresh live ETA & alternative traffic overlay
+            renderRoutesOnMap(bestRoute, altRoutes);
+            badge.innerText = "30s SYNC: FASTEST";
             badge.style.background = "rgba(72, 187, 120, 0.2)";
             badge.style.color = "#68d391";
           }
@@ -474,12 +689,11 @@
       if (destMarker) destMarker.remove();
       destMarker = new tt.Marker({ color: "#e53e3e" }).setLngLat(destination.coords).addTo(map);
 
-      await calculateFastestRoute({ forceApply: true, reason: "initial" });
+      await calculateFastestTollFreeRoute({ forceApply: true, reason: "initial" });
 
-      // Check every 30 seconds for a faster route around traffic
       routeTimer = setInterval(() => {
         if (isNavigating && destination) {
-          calculateFastestRoute({ forceApply: false, reason: "30s-check" });
+          calculateFastestTollFreeRoute({ forceApply: false, reason: "30s-check" });
         }
       }, ROUTE_REFRESH_MS);
     }
@@ -496,9 +710,15 @@
       document.getElementById("stopNavBtn").style.display = "none";
       document.getElementById("guidanceBox").style.display = "none";
       document.getElementById("routeBadge").style.display = "none";
+      document.getElementById("altBadge").style.display = "none";
       document.getElementById("destInput").value = "";
       document.getElementById("status").innerText = "Navigation ended.";
-      if (map.getLayer("route")) { map.removeLayer("route"); map.removeSource("route"); }
+
+      clearLayerIfExists("alt-route-traffic");
+      clearLayerIfExists("alt-route");
+      clearLayerIfExists("route-jam-red");
+      clearLayerIfExists("route-jam-amber");
+      clearLayerIfExists("route");
     }
 
     function updateNavigationProgress(lat, lon) {
@@ -512,7 +732,7 @@
           if (d < minRouteDist) minRouteDist = d;
         }
         if (minRouteDist > 55) {
-          calculateFastestRoute({ forceApply: true, reason: "offroute" });
+          calculateFastestTollFreeRoute({ forceApply: true, reason: "offroute" });
           return;
         }
       }
